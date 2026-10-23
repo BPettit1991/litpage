@@ -58,8 +58,11 @@ const sidebar = await page.locator('nav.lit-sidebar-container').innerText();
 check('sample pages are in the sidebar', ['Roadmap', 'Projects', 'Meeting notes', 'Team wiki'].every((t) => sidebar.includes(t)), sidebar.slice(0, 300));
 
 // ---- refused RPCs (403 with the demo message)
-const spaceId = await page.evaluate(() => window.__ncEditor.records.all('space')[0]?.id);
-const userId = await page.evaluate(() => window.__ncEditor.records.all('lit_user')[0]?.id);
+// ids from the account payload (production builds have no dev store hook)
+const account = (await rpc(page, 'loadAccountData')).body?.recordMap ?? {};
+const firstId = (table, pred = () => true) => Object.entries(account[table] ?? {}).find(([, r]) => pred(r?.value ?? r))?.[0];
+const spaceId = firstId('space');
+const userId = firstId('lit_user');
 const REFUSED = [
   ['changePassword', { password: 'another-password-123', currentPassword: PASSWORD }],
   ['removePassword', {}],
@@ -86,7 +89,9 @@ for (const [name, body] of REFUSED) {
 }
 
 // ---- transaction path: public sharing and account identity
-const pageId = await page.evaluate(() => window.__ncEditor.records.all('block').find((b) => b.type === 'page' && b.alive !== false)?.id);
+// the welcome page opens after sign-in; its id is the 32-hex tail of the URL
+const hex = /([0-9a-f]{32})(?:[?#].*)?$/.exec(page.url())?.[1] ?? '';
+const pageId = hex ? `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}` : firstId('block', (b) => b?.type === 'page' && b.alive !== false);
 const tx = (operations) => rpc(page, 'applyChanges', { transactions: [{ id: crypto.randomUUID(), spaceId, operations }] });
 const pub = await tx([{ pointer: { table: 'block', id: pageId, spaceId }, path: ['permissions'], command: 'set', args: [{ type: 'public_permission', role: 'reader' }] }]);
 check('transaction cannot make a page public', pub.status >= 400, `${pub.status} ${JSON.stringify(pub.body).slice(0, 120)}`);

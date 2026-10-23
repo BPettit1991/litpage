@@ -30,7 +30,7 @@ server.
 
 > **Try it:** [litpage-demo-production.up.railway.app](https://litpage-demo-production.up.railway.app), sign in with `demo@example.com` and the password `litpage-demo`
 > (“Continue with a password”). Everyone shares this account, account and admin changes are turned off, and the data
-> resets every 24 hours. AI is not connected in the demo.
+> resets every hour. AI is not connected in the demo.
 
 <p align="center">
   <picture>

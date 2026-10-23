@@ -26,7 +26,7 @@
 Litpage는 직접 운영하는 오픈소스 워크스페이스입니다. 블록 편집기로 문서를 쓰고, 페이지와 팀을 정리하고, 여러 보기를 갖춘 데이터베이스로 일을 관리하고, 세밀한 권한으로 공유하고, 내 API 키로 AI 채팅, 에이전트, 글쓰기 도움을 씁니다. 앱 전체가 Node.js 프로세스 하나와 SQLite 파일 하나로 동작해서 노트북이나 서버 한 대로 충분합니다.
 
 > **써 보기:** [litpage-demo-production.up.railway.app](https://litpage-demo-production.up.railway.app)에서 `demo@example.com`과 비밀번호 `litpage-demo`로 로그인하세요
-> (“Continue with a password”). 모두가 이 계정을 함께 쓰고, 계정과 관리 설정 변경은 막혀 있으며, 데이터는 24시간마다
+> (“Continue with a password”). 모두가 이 계정을 함께 쓰고, 계정과 관리 설정 변경은 막혀 있으며, 데이터는 1시간마다
 > 초기화됩니다. 데모에는 AI가 연결되어 있지 않습니다.
 
 <p align="center">

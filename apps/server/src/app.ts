@@ -24,7 +24,8 @@ import { cleanFileName, cleanMime, fileHeaders, fileRow, storeFile } from './con
 import { hit } from './ratelimit.ts';
 import { audit } from './audit.ts';
 import { pageIdOf } from './search.ts';
-import { assertDemoRpc, DEMO_MESSAGE, isDemoMode } from './demo.ts';
+import { assertDemoRpc, DEMO_MESSAGE, demoConfig, isDemoMode } from './demo.ts';
+import { installDemoSandboxHooks, sandboxFileProblem } from './demoSandbox.ts';
 
 Object.assign(handlers, extraHandlers);
 // Keep direct RPC calls and HTTP dispatch on the same demo policy.
@@ -34,6 +35,7 @@ for (const [name, handler] of Object.entries(handlers)) {
     return handler(ctx, body);
   };
 }
+installDemoSandboxHooks();
 realtime.setRoleResolver((table, rec, userId) => recordRole(table, rec, userId));
 realtime.setAccess({
   page: (pageId, userId) => blockRole(pageId, userId) !== 'none',
@@ -141,7 +143,9 @@ app.post('/api/rpc/:name', bodyLimit({ maxSize: MAX_JSON_BYTES, onError: tooLarg
     else if (status === 403 || (status === 400 && name === 'applyChanges')) console.warn(`[authz] ${name} ${status} user=${userId ?? '-'}: ${String(e?.message ?? '').slice(0, 300)}`);
     const kind = status === 401 ? 'UnauthorizedError' : status === 403 ? 'PermissionError' : status === 429 ? 'RateLimitedError' : status >= 500 ? 'InternalError' : 'ValidationError';
     // internal errors are logged, not echoed (no SQL / stack details to clients)
-    return c.json({ errorId: newId(), name: kind, message: status >= 500 ? 'Something went wrong while processing that request.' : (e?.message ?? 'Error') }, status as any);
+    // public demo: the signed-out answer tells the login page about "Try the demo"
+    const demo = status === 401 && isDemoMode() ? { demoMode: demoConfig() } : {};
+    return c.json({ errorId: newId(), name: kind, message: status >= 500 ? 'Something went wrong while processing that request.' : (e?.message ?? 'Error'), ...demo }, status as any);
   }
 });
 
@@ -166,6 +170,8 @@ app.post('/api/upload', bodyLimit({ maxSize: isDemoMode() ? DEMO_MAX_UPLOAD_BYTE
   const spaceId = sid && isSpaceMember(getRecord<SpaceRecord>('space', sid), userId) ? sid : null;
   const buf = Buffer.from(await c.req.arrayBuffer());
   if (buf.length > maxUpload) return c.json({ message: isDemoMode() ? `${DEMO_MESSAGE} Files are limited to 5 MB in the public demo.` : 'File too large (50MB max)' }, 413);
+  const quota = isDemoMode() ? sandboxFileProblem(userId, buf.length) : null;
+  if (quota) return c.json({ message: quota }, 413);
   const f = storeFile(name, buf, userId, spaceId, mime);
   // Settings › Audit log › File uploaded: "Uploaded {fileName} to {pageName}" when the upload names a block the
   // uploader can edit, else "Uploaded a file" in the workspace it is attributed to
@@ -182,6 +188,11 @@ app.get('/files/:id/:name', (c) => {
   if (isDemoMode() && !userForToken(parseCookies(c.req.header('cookie')).lit_session)) return c.text(DEMO_MESSAGE, 403);
   const row = fileRow(c.req.param('id'));
   if (!row || !existsSync(row.path)) return c.text('Not found', 404);
+  if (isDemoMode()) {
+    // demo visitors only reach files of their own workspace (or their own uploads)
+    const viewer = userForToken(parseCookies(c.req.header('cookie')).lit_session);
+    if (row.user_id !== viewer && !(row.space_id && viewer && isSpaceMember(getRecord<SpaceRecord>('space', row.space_id), viewer))) return c.text('Not found', 404);
+  }
   if (row.private) {
     // exports: only the person who exported
     const userId = userForToken(parseCookies(c.req.header('cookie')).lit_session);

@@ -11,6 +11,7 @@ import { recordActivity, maybeSnapshot } from './history.ts';
 import { TxGuard, prepareOp } from './authz.ts';
 import { collectionRole, propertyThreadVisible, redactDatabaseRecord } from './propaccess.ts';
 import { agentRecordRole, agentRoleFor } from '@nc/shared/agents.ts';
+import { DEMO_VISIBLE_USER_IDS, isDemoMode } from './demo.ts';
 
 export const lookup: PermissionLookup = {
   block: (id) => getRecord<BlockRecord>('block', id),
@@ -64,7 +65,10 @@ export function recordRole(table: Table, rec: BaseRecord | undefined, userId: st
     case 'space_view':
       return r.parent_id === userId ? 'editor' : 'none';
     case 'lit_user':
-      return rec.id === userId ? 'editor' : userId ? 'reader' : 'none';
+      if (rec.id === userId) return 'editor';
+      // public demo: visitors only see the people of their own workspace
+      if (userId && isDemoMode()) return new UserVisibility(userId).canSeeUser(rec.id) ? 'reader' : 'none';
+      return userId ? 'reader' : 'none';
     case 'user_root':
     case 'user_settings':
       return rec.id === userId ? 'editor' : 'none';
@@ -134,6 +138,10 @@ export class UserVisibility {
     this.cache.set(userId, ok);
     return ok;
   }
+  /** Public demo: whether this viewer may see the user at all (themself, workspace members, the template author). */
+  canSeeUser(userId: string): boolean {
+    return DEMO_VISIBLE_USER_IDS.has(userId) || this.canSeeEmail(userId);
+  }
   /** The record as this viewer may see it. */
   user<T extends BaseRecord>(rec: T): T {
     if (!(rec as any).email || this.canSeeEmail(rec.id)) return rec;
@@ -154,6 +162,7 @@ export class RecordMapBuilder {
     if (!rec) return this;
     const r = role ?? recordRole(table, rec, this.userId);
     if (r === 'none' && table !== 'lit_user') return this;
+    if (table === 'lit_user' && isDemoMode() && !this.users.canSeeUser(rec.id)) return this;
     // property access: restricted database values / properties are left out
     const value = table === 'lit_user' ? this.users.user(rec) : redactDatabaseRecord(table, rec, this.userId, r);
     const bucket = ((this.map as any)[table] ??= {});

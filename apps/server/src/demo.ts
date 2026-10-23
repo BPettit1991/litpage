@@ -13,9 +13,33 @@ export function demoResetHours(): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-export function demoConfig(): { enabled: boolean; resetHours?: number } {
+function positiveEnv(name: string, fallback: number): number {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+/** Per-visitor sandboxes (demoSandbox.ts): lifetime, how many may live at once, quotas and creation limits per client address. */
+export function demoLimits() {
+  return {
+    sandboxHours: positiveEnv('NC_DEMO_SANDBOX_HOURS', 4),
+    maxSandboxes: Math.floor(positiveEnv('NC_DEMO_MAX_SANDBOXES', 300)),
+    maxRecords: Math.floor(positiveEnv('NC_DEMO_MAX_RECORDS', 5000)),
+    maxUploadBytes: positiveEnv('NC_DEMO_MAX_UPLOAD_MB', 25) * 1024 * 1024,
+    maxFiles: Math.floor(positiveEnv('NC_DEMO_MAX_FILES', 50)),
+    perIpHour: Math.floor(positiveEnv('NC_DEMO_SANDBOXES_PER_IP_HOUR', 5)),
+    perIpDay: Math.floor(positiveEnv('NC_DEMO_SANDBOXES_PER_IP_DAY', 20)),
+  };
+}
+
+/** Whether the shared account (NC_BOOTSTRAP_EMAIL / NC_BOOTSTRAP_PASSWORD) can sign in on this demo. */
+export function demoSharedAccount(): boolean {
+  return isDemoMode() && !!process.env.NC_BOOTSTRAP_EMAIL?.trim() && !!process.env.NC_BOOTSTRAP_PASSWORD;
+}
+
+export function demoConfig(): { enabled: boolean; resetHours?: number; sandboxHours?: number; sharedAccount?: boolean } {
   const hours = demoResetHours();
-  return { enabled: isDemoMode(), ...(hours ? { resetHours: hours } : {}) };
+  if (!isDemoMode()) return { enabled: false };
+  return { enabled: true, ...(hours ? { resetHours: hours } : {}), sandboxHours: demoLimits().sandboxHours, sharedAccount: demoSharedAccount() };
 }
 
 /** Only wipe a directory that clearly belongs to Litpage data. Keep the directory itself. */
@@ -101,6 +125,8 @@ const BLOCKED_RPC_NAMES = new Set([
   'aiTableToDatabase', 'aiCreateSkill', 'aiCustomizeBuiltinSkill', 'aiSkillFile', 'aiFormula', 'aiFormulaFeedback', 'aiGenerateImageBlock', 'aiEditImageBlock', 'aiGenerateImage',
   'meetingStop', 'meetingSummarize', 'meetingUploadAudio', 'meetingRetryTranscription',
   'previewCsv', 'mergeCsv',
+  // template reviews are shown to every other visitor
+  'reviewTemplate',
 ]);
 
 export function isDemoBlockedRpc(name: string): boolean {
@@ -119,6 +145,10 @@ export function assertDemoRpc(name: string): void {
 export function isDemoAccountEmail(email: string): boolean {
   return isDemoMode() && !!process.env.NC_BOOTSTRAP_EMAIL && email.toLowerCase() === process.env.NC_BOOTSTRAP_EMAIL.trim().toLowerCase();
 }
+
+/** Users every demo visitor may see besides themselves and their workspace members: the template gallery author
+ *  (seed.ts TEMPLATE_USER_ID), shown on template previews. */
+export const DEMO_VISIBLE_USER_IDS = new Set(['00000000-0000-4000-8000-00000000c0df']);
 
 export const DEMO_DISPLAY_SETTINGS = new Set([
   'locale', 'preferred_theme', 'high_contrast', 'enter_new_line', 'number_format', 'text_direction_controls', 'start_day_of_week', 'date_format',

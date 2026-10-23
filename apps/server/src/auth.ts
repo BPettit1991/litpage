@@ -32,10 +32,11 @@ export function parseCookies(header: string | undefined): Record<string, string>
   return out;
 }
 
-export function createSession(userId: string): string {
+/** `expires`: end of the session (default one year; demo sandboxes end with their sandbox). */
+export function createSession(userId: string, expires?: number): string {
   const token = randomBytes(32).toString('hex');
   const now = Date.now();
-  db.prepare('INSERT INTO sessions (token, user_id, created_time, expires) VALUES (?, ?, ?, ?)').run(token, userId, now, now + SESSION_DAYS * 86400_000);
+  db.prepare('INSERT INTO sessions (token, user_id, created_time, expires) VALUES (?, ?, ?, ?)').run(token, userId, now, expires ?? now + SESSION_DAYS * 86400_000);
   return token;
 }
 
@@ -55,8 +56,8 @@ export function userFromRequest(req: IncomingMessage): string | null {
 }
 
 /** Session cookie: HttpOnly, SameSite=Lax, and Secure whenever the service is served over https. */
-export function sessionCookie(token: string, secure = false): string {
-  return `lit_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_DAYS * 86400}${secure ? '; Secure' : ''}`;
+export function sessionCookie(token: string, secure = false, maxAgeSeconds = SESSION_DAYS * 86400): string {
+  return `lit_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${secure ? '; Secure' : ''}`;
 }
 
 export function clearSessionCookie(secure = false): string {

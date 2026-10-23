@@ -4,10 +4,13 @@ export const clientId = crypto.randomUUID();
 export class ApiError extends Error {
   status: number;
   override name: string;
-  constructor(status: number, name: string, message: string) {
+  /** the error response body */
+  data?: any;
+  constructor(status: number, name: string, message: string, data?: any) {
     super(message);
     this.status = status;
     this.name = name;
+    this.data = data;
   }
 }
 
@@ -25,7 +28,7 @@ export async function api<T = any>(name: string, body: unknown = {}, init?: { si
   } catch {
     /* empty body */
   }
-  if (!res.ok) throw new ApiError(res.status, json?.name ?? 'Error', json?.message ?? res.statusText);
+  if (!res.ok) throw new ApiError(res.status, json?.name ?? 'Error', json?.message ?? res.statusText, json);
   return json as T;
 }
 

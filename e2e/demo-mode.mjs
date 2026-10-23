@@ -1,14 +1,18 @@
-// Public demo mode (NC_DEMO_MODE=1) against a server started with the shared bootstrap account:
-//   NC_DEMO_MODE=1 NC_BOOTSTRAP_EMAIL=demo@example.com NC_BOOTSTRAP_PASSWORD=litpage-demo … node apps/server/src/main.ts
-//   NC_BASE=<web url> DEMO_EMAIL=demo@example.com DEMO_PASSWORD=litpage-demo node e2e/demo-mode.mjs
-// Covers: password sign-in, the notice bar, sample pages, refusals for account / workspace / sharing / outbound /
-// programmatic actions (RPC and transaction paths, REST and MCP), the message in the UI, browser-only language,
-// ordinary editing, the 5 MB upload cap, no shared-account lockout after wrong passwords, no anonymous file downloads.
+// Public demo mode (NC_DEMO_MODE=1) with per-visitor sandboxes, against a dev server or a production build:
+//   NC_DEMO_MODE=1 NC_DEMO_SANDBOXES_PER_IP_HOUR=50 … node apps/server/src/main.ts
+//   NC_BASE=<web url> node e2e/demo-mode.mjs
+// Covers: "Try the demo" on the login page (email form hidden without a shared account), landing on "Start here" in a
+// seeded workspace with the notice bar, two visitors in separate workspaces that cannot read or find each other, editing
+// and a second tab of the same sandbox updating live, refusals for account / workspace / sharing / outbound /
+// programmatic actions (RPC and transaction paths, REST and MCP), the 5 MB upload cap, files served to their own
+// sandbox only, and "Start over" (a fresh workspace; tabs of the old one return to the login page).
+// With a shared account configured (DEMO_EMAIL / DEMO_PASSWORD) it also checks that it still signs in.
+// Ids come from RPCs or the URL (production builds have no dev store hook).
 import { chromium } from 'playwright-core';
 import { BASE, CHROME } from './lib.mjs';
 
-const EMAIL = process.env.DEMO_EMAIL ?? 'demo@example.com';
-const PASSWORD = process.env.DEMO_PASSWORD ?? 'litpage-demo';
+const SHARED_EMAIL = process.env.DEMO_EMAIL ?? '';
+const SHARED_PASSWORD = process.env.DEMO_PASSWORD ?? '';
 let pass = 0;
 let fail = 0;
 const check = (name, ok, detail = '') => {
@@ -20,130 +24,151 @@ const check = (name, ok, detail = '') => {
 const browser = await chromium.launch({ executablePath: CHROME, headless: true });
 const newContext = () => browser.newContext({ viewport: { width: 1384, height: 853 }, locale: 'en-US' });
 
-async function signIn(page, password = PASSWORD) {
-  await page.goto(`${BASE}/`);
-  await page.waitForURL(/\/login/);
-  await page.fill('#email', EMAIL);
-  await page.click('button[type=submit]');
-  await page.getByText('Continue with a password').first().click();
-  await page.fill('input[type=password]', password);
-  await page.click('button[type=submit]');
-}
 const rpc = (page, name, body = {}) => page.evaluate(async ([n, b]) => {
   const r = await fetch(`/api/rpc/${n}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) });
   return { status: r.status, body: await r.json().catch(() => ({})) };
 }, [name, body]);
+const idFromUrl = (url) => {
+  const hex = String(url).match(/([0-9a-f]{32})(?:[?#].*)?$/)?.[1] ?? '';
+  return hex ? `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}` : '';
+};
+async function account(page) {
+  const rm = (await rpc(page, 'loadAccountData')).body?.recordMap ?? {};
+  return { spaceId: Object.keys(rm.space ?? {})[0], userId: Object.keys(rm.user_root ?? {})[0], recordMap: rm };
+}
 
-// ---- wrong passwords must not lock the shared account
+/** A new visitor: login page → "Try the demo" → "Start here". Returns the page, its ids and the time it took. */
+async function visitor(label) {
+  const ctx = await newContext();
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => console.log(`[pageerror ${label}]`, e.message));
+  await page.goto(`${BASE}/`);
+  await page.waitForURL(/\/login/);
+  const button = page.locator('[data-testid="try-demo"]');
+  await button.waitFor({ timeout: 15000 });
+  const started = Date.now();
+  await button.click();
+  await page.waitForURL(/Start-here-[0-9a-f]{32}/, { timeout: 20000 });
+  await page.waitForSelector('nav.lit-sidebar-container', { timeout: 20000 });
+  await page.locator('h1[data-content-editable-leaf]', { hasText: 'Start here' }).first().waitFor({ timeout: 20000 });
+  const ms = Date.now() - started;
+  const acct = await account(page);
+  return { ctx, page, ms, pageId: idFromUrl(page.url()), ...acct };
+}
+
+// ---- the login page
 {
   const ctx = await newContext();
   const page = await ctx.newPage();
-  let statuses = [];
   await page.goto(`${BASE}/`);
-  for (let i = 0; i < 12; i++) {
-    statuses.push((await rpc(page, 'signInWithEmail', { email: EMAIL, password: `wrong-${i}` })).status);
-  }
-  check('12 wrong passwords never answer 429 for the shared account', !statuses.includes(429), statuses.join(','));
+  await page.waitForURL(/\/login/);
+  await page.locator('[data-testid="try-demo"]').waitFor({ timeout: 15000 });
+  const text = await page.locator('.nc-auth-login').innerText();
+  check('login page offers "Try the demo" with the sandbox explanation', /Try the demo/.test(text) && /own temporary workspace/.test(text) && /deleted after \d+ hours/.test(text) && /No sign-up/.test(text), text.slice(0, 200));
+  const emailFields = await page.locator('#email').count();
+  if (SHARED_EMAIL) check('the email form stays for the shared account', emailFields === 1);
+  else check('without a shared account the email form is hidden', emailFields === 0);
   await ctx.close();
 }
 
-const ctx = await newContext();
-const page = await ctx.newPage();
-await signIn(page);
-await page.waitForSelector('nav.lit-sidebar-container', { timeout: 30000 });
-check('signs in with the published password', true);
-const notice = await page.locator('.lp-demo-notice').innerText().catch(() => '');
-check('notice bar warns about the shared account and personal information', /Public demo/.test(notice) && /personal information/.test(notice), notice);
-const sidebar = await page.locator('nav.lit-sidebar-container').innerText();
-check('sample pages are in the sidebar', ['Roadmap', 'Projects', 'Meeting notes', 'Team wiki'].every((t) => sidebar.includes(t)), sidebar.slice(0, 300));
+// ---- visitor A lands in a seeded workspace
+const a = await visitor('A');
+check(`visitor A lands on "Start here" in ${a.ms} ms`, a.ms < 10000 && !!a.pageId, a.page.url());
+const notice = await a.page.locator('.lp-demo-notice').innerText().catch(() => '');
+check('notice bar explains the sandbox and offers "Start over"', /Demo sandbox/.test(notice) && /only yours/.test(notice) && /personal information/.test(notice) && /Start over/.test(notice), notice);
+const sidebarA = await a.page.locator('nav.lit-sidebar-container').innerText();
+check('sample pages are in the sidebar', ['Start here', 'Roadmap', 'Projects', 'Meeting notes', 'Team wiki'].every((t) => sidebarA.includes(t)), sidebarA.slice(0, 300));
+const startText = await a.page.locator('.nc-frame-content').innerText();
+check('"Start here" lists things to try', /Things to try/.test(startText) && /Timeline/.test(startText) && /second browser tab/.test(startText) && /AI is not connected/.test(startText), startText.slice(0, 300));
+const workspaceName = Object.values(a.recordMap.space ?? {})[0]?.value?.value?.name;
+check('the workspace is "Litpage Demo"', workspaceName === 'Litpage Demo', workspaceName);
 
-// ---- refused RPCs (403 with the demo message)
-// ids from the account payload (production builds have no dev store hook)
-const account = (await rpc(page, 'loadAccountData')).body?.recordMap ?? {};
-const firstId = (table, pred = () => true) => Object.entries(account[table] ?? {}).find(([, r]) => pred(r?.value ?? r))?.[0];
-const spaceId = firstId('space');
-const userId = firstId('lit_user');
+// ---- visitor B gets a separate workspace and cannot see A
+const b = await visitor('B');
+check('visitor B gets another workspace and account', !!b.spaceId && b.spaceId !== a.spaceId && b.userId !== a.userId, `${a.spaceId} ${b.spaceId}`);
+
+// ---- editing works, and a second tab of the same sandbox sees it live
+const marker = `Zebra${Date.now().toString(36)}`;
+const tab2 = await a.ctx.newPage();
+await tab2.goto(a.page.url());
+await tab2.locator('h1[data-content-editable-leaf]', { hasText: 'Start here' }).first().waitFor({ timeout: 20000 });
+await tab2.waitForTimeout(800);
+const title = a.page.locator('h1[data-content-editable-leaf]').first();
+await title.click();
+await a.page.keyboard.press('End');
+await a.page.keyboard.type(` ${marker}`);
+const live = await tab2.locator('h1[data-content-editable-leaf]', { hasText: marker }).first().waitFor({ timeout: 8000 }).then(() => true, () => false);
+check('a second tab of the same sandbox shows the edit live', live);
+await a.page.waitForTimeout(600);
+const saved = await rpc(a.page, 'loadPage', { pageId: a.pageId });
+check('the edit is saved', JSON.stringify(saved.body?.recordMap?.block?.[a.pageId] ?? {}).includes(marker));
+
+// B can't read, find or reach A
+const loadA = await rpc(b.page, 'loadPage', { pageId: a.pageId });
+check('B cannot open A\'s page', !JSON.stringify(loadA.body).includes(marker) && !loadA.body?.recordMap?.block?.[a.pageId], JSON.stringify(loadA.body).slice(0, 160));
+const fetchA = await rpc(b.page, 'fetchRecords', { requests: [{ pointer: { table: 'lit_user', id: a.userId } }, { pointer: { table: 'space', id: a.spaceId } }] });
+check('B cannot look up A\'s guest or workspace', !JSON.stringify(fetchA.body).includes(a.userId) && !JSON.stringify(fetchA.body).includes(a.spaceId), JSON.stringify(fetchA.body).slice(0, 160));
+const searchB = await rpc(b.page, 'searchWorkspace', { query: marker, spaceId: b.spaceId });
+const searchCross = await rpc(b.page, 'searchWorkspace', { query: marker, spaceId: a.spaceId });
+check('B cannot find A\'s text by search', !JSON.stringify(searchB.body).includes(marker) && !JSON.stringify(searchCross.body).includes(marker));
+const peopleB = await rpc(b.page, 'searchPeople', { spaceId: b.spaceId, query: 'Guest' });
+check('B\'s people search only finds B', JSON.stringify(peopleB.body?.userIds ?? []) === JSON.stringify([b.userId]), JSON.stringify(peopleB.body).slice(0, 160));
+await b.page.goto(a.page.url());
+await b.page.waitForTimeout(1500);
+const bView = await b.page.locator('body').innerText();
+check('opening A\'s page URL in B shows nothing of A', !bView.includes(marker), bView.slice(0, 200));
+
+// ---- refusals (403 with the demo message)
 const REFUSED = [
-  ['changePassword', { password: 'another-password-123', currentPassword: PASSWORD }],
-  ['removePassword', {}],
+  ['changePassword', { password: 'another-password-123' }],
   ['startTotpEnrollment', {}],
   ['passkeyRegistrationOptions', {}],
   ['addSecondaryEmail', { email: 'someone@example.com' }],
   ['deleteAccount', {}],
   ['logoutOtherSessions', {}],
-  ['deleteWorkspace', { spaceId, confirmName: 'x' }],
-  ['leaveSpace', { spaceId }],
-  ['setSpaceDomain', { spaceId, domain: 'taken-over' }],
-  ['setMemberRole', { spaceId, userId, role: 'reader' }],
-  ['inviteMembers', { spaceId, emails: ['someone@example.com'] }],
-  ['setInviteLinkEnabled', { spaceId, enabled: true }],
-  ['setAllowedEmailDomains', { spaceId, domains: ['example.com'] }],
-  ['mcpCreateToken', { spaceId, name: 'x' }],
-  ['devCreateConnection', { spaceId, name: 'x' }],
-  ['setSiteSettings', { spaceId }],
+  ['deleteWorkspace', { spaceId: a.spaceId, confirmName: 'x' }],
+  ['leaveSpace', { spaceId: a.spaceId }],
+  ['setSpaceDomain', { spaceId: a.spaceId, domain: 'taken-over' }],
+  ['setMemberRole', { spaceId: a.spaceId, userId: a.userId, role: 'reader' }],
+  ['inviteMembers', { spaceId: a.spaceId, emails: ['someone@example.com'] }],
+  ['setInviteLinkEnabled', { spaceId: a.spaceId, enabled: true }],
+  ['setAllowedEmailDomains', { spaceId: a.spaceId, domains: ['example.com'] }],
+  ['mcpCreateToken', { spaceId: a.spaceId, name: 'x' }],
+  ['devCreateConnection', { spaceId: a.spaceId, name: 'x' }],
+  ['setSiteSettings', { spaceId: a.spaceId }],
   ['createWorkspace', { name: 'Another' }],
+  ['reviewTemplate', { templateId: 'roadmap', rating: 5 }],
 ];
 for (const [name, body] of REFUSED) {
-  const r = await rpc(page, name, body);
+  const r = await rpc(a.page, name, body);
   check(`refuses ${name}`, r.status === 403 && /public demo/i.test(r.body?.message ?? ''), `${r.status} ${JSON.stringify(r.body).slice(0, 120)}`);
 }
+const tx = (page, spaceId, operations) => rpc(page, 'applyChanges', { transactions: [{ id: crypto.randomUUID(), spaceId, operations }] });
+const pub = await tx(a.page, a.spaceId, [{ pointer: { table: 'block', id: a.pageId, spaceId: a.spaceId }, path: ['permissions'], command: 'set', args: [{ type: 'public_permission', role: 'reader' }] }]);
+check('transaction cannot make a page public', pub.status >= 400, `${pub.status}`);
+const shareB = await tx(a.page, a.spaceId, [{ pointer: { table: 'block', id: a.pageId, spaceId: a.spaceId }, path: ['permissions'], command: 'set', args: [{ type: 'user_permission', role: 'editor', user_id: a.userId }, { type: 'user_permission', role: 'editor', user_id: b.userId }] }]);
+check('transaction cannot share a page with another visitor', shareB.status >= 400, `${shareB.status}`);
+const intoA = await tx(b.page, a.spaceId, [{ pointer: { table: 'block', id: a.pageId, spaceId: a.spaceId }, path: ['properties', 'title'], command: 'set', args: [['Taken over']] }]);
+check('B cannot write into A\'s workspace', intoA.status >= 400, `${intoA.status}`);
+const rename = await tx(a.page, a.spaceId, [{ pointer: { table: 'lit_user', id: a.userId }, path: ['name'], command: 'set', args: 'Taken over' }]);
+check('transaction cannot rename the guest', rename.status >= 400, `${rename.status}`);
 
-// ---- transaction path: public sharing and account identity
-// the welcome page opens after sign-in; its id is the 32-hex tail of the URL
-const hex = /([0-9a-f]{32})(?:[?#].*)?$/.exec(page.url())?.[1] ?? '';
-const pageId = hex ? `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}` : firstId('block', (b) => b?.type === 'page' && b.alive !== false);
-const tx = (operations) => rpc(page, 'applyChanges', { transactions: [{ id: crypto.randomUUID(), spaceId, operations }] });
-const pub = await tx([{ pointer: { table: 'block', id: pageId, spaceId }, path: ['permissions'], command: 'set', args: [{ type: 'public_permission', role: 'reader' }] }]);
-check('transaction cannot make a page public', pub.status >= 400, `${pub.status} ${JSON.stringify(pub.body).slice(0, 120)}`);
-const rename = await tx([{ pointer: { table: 'lit_user', id: userId }, path: ['name'], command: 'set', args: 'Taken over' }]);
-check('transaction cannot rename the shared account', rename.status >= 400, `${rename.status}`);
-const edit = await tx([{ pointer: { table: 'block', id: pageId, spaceId }, path: ['properties', 'title'], command: 'set', args: [['Demo edit works']] }]);
-check('ordinary page edits still save', edit.status === 200, `${edit.status} ${JSON.stringify(edit.body).slice(0, 120)}`);
-
-// ---- the UI shows the refusal
-await page.keyboard.press('Meta+Comma');
-await page.waitForTimeout(1200);
-const changeBtn = page.locator('.nc-set-row[data-setting="password"] .nc-set-btn', { hasText: 'Change password' }).first();
-if (await changeBtn.count()) {
-  await changeBtn.click();
-  const sub = '.nc-set-subdialog';
-  await page.waitForSelector(sub);
-  const inputs = page.locator(`${sub} input[type=password]`);
-  const n = await inputs.count();
-  for (let i = 0; i < n; i++) await inputs.nth(i).fill(i === 0 && n > 2 ? PASSWORD : 'another-password-123');
-  await page.click(`${sub} button[type=submit]`);
-  await page.waitForTimeout(1200);
-  const body = await page.locator('body').innerText();
-  check('changing the password in Settings shows the demo message', /public demo/i.test(body), body.slice(0, 200));
-} else check('Settings › Password › Change password is present', false, 'no Change password button');
-await page.keyboard.press('Escape');
-await page.keyboard.press('Escape');
-
-// ---- language stays in this browser
-await page.evaluate(() => localStorage.setItem('nc:demo-pref:locale', JSON.stringify('ko-KR')));
-await page.reload();
-await page.waitForSelector('nav.lit-sidebar-container', { timeout: 30000 });
-const koHere = await page.locator('nav.lit-sidebar-container').innerText();
-const other = await newContext();
-const page2 = await other.newPage();
-await signIn(page2);
-await page2.waitForSelector('nav.lit-sidebar-container', { timeout: 30000 });
-const enThere = await page2.locator('nav.lit-sidebar-container').innerText();
-check('a visitor can switch to Korean in their browser', /홈|새 채팅|라이브러리/.test(koHere), koHere.slice(0, 120));
-check('another visitor still sees English', /Home|New chat|Library/.test(enThere) && !/라이브러리/.test(enThere), enThere.slice(0, 120));
-
-// ---- uploads: 1 MB ok, 6 MB refused; files are not served anonymously
-const up = (bytes) => page.evaluate(async ([n, s]) => {
+// ---- uploads: 1 MB ok, 6 MB refused; files only reach their own sandbox
+const up = (page, spaceId, bytes) => page.evaluate(async ([n, s]) => {
   const r = await fetch(`/api/upload?name=f.bin&type=application/octet-stream&spaceId=${s}`, { method: 'POST', body: new Uint8Array(n) });
   return { status: r.status, body: await r.json().catch(() => ({})) };
 }, [bytes, spaceId]);
-const small = await up(1024 * 1024);
+const small = await up(a.page, a.spaceId, 1024 * 1024);
 check('1 MB upload is accepted', small.status === 200, `${small.status}`);
-const big = await up(6 * 1024 * 1024);
+const big = await up(a.page, a.spaceId, 6 * 1024 * 1024);
 check('6 MB upload is refused', big.status === 413, `${big.status}`);
 if (small.body?.url) {
   const anon = await fetch(new URL(small.body.url, BASE));
   check('uploaded files are not served without signing in', anon.status === 403, `${anon.status}`);
+  const other = await b.page.evaluate(async (u) => (await fetch(u)).status, small.body.url);
+  check('A\'s file is not served to B', other === 404, `${other}`);
+  const own = await a.page.evaluate(async (u) => (await fetch(u)).status, small.body.url);
+  check('A\'s file is served to A', own === 200, `${own}`);
 }
 
 // ---- REST API and MCP endpoint
@@ -152,11 +177,47 @@ check('REST API is closed', rest.status === 403, `${rest.status}`);
 const mcp = await fetch(new URL('/api/mcp', BASE), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' }) });
 check('MCP endpoint is closed', mcp.status === 403, `${mcp.status}`);
 
-// ---- the account still works for the next visitor
-const ctx3 = await newContext();
-const page3 = await ctx3.newPage();
-await signIn(page3);
-await page3.waitForSelector('nav.lit-sidebar-container', { timeout: 30000 }).then(() => check('the next visitor can still sign in', true), (e) => check('the next visitor can still sign in', false, e.message));
+// ---- "Start over": a fresh workspace; the other tab of the old sandbox goes back to the login page
+const oldUrl = a.page.url();
+await a.page.locator('.lp-demo-notice-action', { hasText: 'Start over' }).click();
+await a.page.waitForURL((u) => /Start-here-[0-9a-f]{32}/.test(String(u)) && String(u) !== oldUrl, { timeout: 20000 });
+await a.page.waitForSelector('nav.lit-sidebar-container', { timeout: 20000 });
+const fresh = await account(a.page);
+const freshTitle = await a.page.locator('h1[data-content-editable-leaf]').first().innerText();
+check('"Start over" opens a fresh workspace', !!fresh.spaceId && fresh.spaceId !== a.spaceId && !freshTitle.includes(marker), `${fresh.spaceId} ${freshTitle}`);
+// the other tab shares this browser's session, so it follows to the new sandbox
+const tab2Moved = await tab2.waitForURL((u) => idFromUrl(u) && idFromUrl(u) !== a.pageId, { timeout: 15000 }).then(() => true, () => false);
+check('the old sandbox\'s other tab leaves the deleted workspace', tab2Moved && idFromUrl(tab2.url()) === idFromUrl(a.page.url()), tab2.url());
+// a visitor whose sandbox is gone (B's, deleted by its own "Start over" in another browser) gets the login page
+const bCookies = await b.ctx.cookies();
+const bOther = await browser.newContext({ viewport: { width: 1384, height: 853 }, locale: 'en-US' });
+await bOther.addCookies(bCookies);
+const bOtherPage = await bOther.newPage();
+await bOtherPage.goto(`${BASE}/`);
+await bOtherPage.waitForSelector('nav.lit-sidebar-container', { timeout: 20000 });
+await b.page.goto(`${BASE}/`);
+await b.page.waitForSelector('nav.lit-sidebar-container', { timeout: 20000 });
+await b.page.locator('.lp-demo-notice-action', { hasText: 'Start over' }).click();
+await b.page.waitForURL((u) => idFromUrl(u) && idFromUrl(u) !== b.pageId, { timeout: 20000 });
+const bBack = await bOtherPage.waitForURL(/\/login/, { timeout: 15000 }).then(() => bOtherPage.locator('[data-testid="try-demo"]').waitFor({ timeout: 10000 })).then(() => true, () => false);
+check('a browser whose sandbox was deleted returns to the login page with "Try the demo"', bBack, bOtherPage.url());
+const oldPage = await rpc(a.page, 'loadPage', { pageId: a.pageId });
+check('the old sandbox is gone', !oldPage.body?.recordMap?.block?.[a.pageId]);
+
+// ---- the shared account still signs in when the operator configured one
+if (SHARED_EMAIL && SHARED_PASSWORD) {
+  const ctx = await newContext();
+  const page = await ctx.newPage();
+  await page.goto(`${BASE}/`);
+  await page.waitForURL(/\/login/);
+  await page.fill('#email', SHARED_EMAIL);
+  await page.click('button[type=submit]');
+  await page.getByText('Continue with a password').first().click();
+  await page.fill('input[type=password]', SHARED_PASSWORD);
+  await page.click('button[type=submit]');
+  await page.waitForSelector('nav.lit-sidebar-container', { timeout: 30000 }).then(() => check('the shared account still signs in', true), (e) => check('the shared account still signs in', false, e.message));
+  await ctx.close();
+}
 
 await browser.close();
 console.log(`demo-mode: ${pass} passed, ${fail} failed`);

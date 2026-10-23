@@ -27,6 +27,7 @@ import { autoJoinAllowedDomains } from '../domainJoin.ts';
 import { retainBeforePurge } from '../retention.ts';
 import { TreeCopier, assertCopyBudget, ownedCollectionsOf } from '../dbcopy.ts';
 import { demoConfig, isDemoAccountEmail } from '../demo.ts';
+import { sandboxOfUser } from '../demoSandbox.ts';
 
 export interface Ctx {
   userId: string | null;
@@ -285,7 +286,8 @@ export const handlers: Record<string, Handler> = {
       ];
       addPageTrees(roots, uid, rm);
     }
-    return { recordMap: rm.map, lsn: currentLsn(), demoMode: demoConfig() };
+    const sandbox = sandboxOfUser(uid);
+    return { recordMap: rm.map, lsn: currentLsn(), demoMode: { ...demoConfig(), ...(sandbox ? { sandbox: { createdTime: sandbox.created_time, expires: sandbox.expires } } : {}) } };
   },
   createWorkspace(ctx, { name, icon }) {
     const uid = requireUser(ctx);

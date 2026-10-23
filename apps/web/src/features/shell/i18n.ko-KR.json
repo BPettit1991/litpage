@@ -3871,5 +3871,10 @@
   "lp.templates.your_name": "이름",
   "lp.templates.your_rating": "내 평점",
   "lp.shell.public_demo_notice": "공개 데모에서는 모두가 이 계정을 함께 사용하며 데이터가 {hours}시간마다 초기화됩니다. 개인정보를 입력하지 마세요.",
-  "lp.shell.public_demo_notice_no_reset": "공개 데모에서는 모두가 이 계정을 함께 사용합니다. 개인정보를 입력하지 마세요."
+  "lp.shell.public_demo_notice_no_reset": "공개 데모에서는 모두가 이 계정을 함께 사용합니다. 개인정보를 입력하지 마세요.",
+  "lp.shell.demo_sandbox_notice": "데모 샌드박스: 이 워크스페이스는 나만 볼 수 있으며 만든 지 {hours}시간이 지나면 삭제됩니다. 개인정보를 입력하지 마세요.",
+  "lp.shell.start_over": "새로 시작",
+  "lp.auth.try_the_demo": "데모 체험하기",
+  "lp.auth.demo_sandbox_hint": "나만 쓰는 임시 워크스페이스가 만들어지고 {hours}시간 뒤 삭제됩니다. 가입은 필요 없습니다.",
+  "lp.auth.the_demo_could_not_start": "데모를 시작하지 못했습니다. 잠시 후 다시 시도하세요."
 }

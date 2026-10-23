@@ -38,7 +38,7 @@ export function slugDomain(name: string): string {
   return `${base}${Math.floor(Math.random() * 9000 + 1000)}`;
 }
 
-interface BlockSpec {
+export interface BlockSpec {
   type: BlockType;
   title?: RichText;
   format?: Record<string, unknown>;
@@ -113,7 +113,10 @@ function gettingStartedContent(): BlockSpec[] {
   ];
 }
 
-export function createWorkspace(userId: string, name: string, icon?: string): { space: SpaceRecord; spaceView: SpaceViewRecord; team: TeamRecord } {
+/** `opts.welcome` replaces the "Welcome to Litpage" private page (demo sandboxes start on their own page). */
+export function createWorkspace(
+  userId: string, name: string, icon?: string, opts: { welcome?: { title: string; icon: string; content: BlockSpec[] } } = {},
+): { space: SpaceRecord; spaceView: SpaceViewRecord; team: TeamRecord } {
   return tx(() => {
     const now = Date.now();
     const spaceId = newId();
@@ -136,8 +139,8 @@ export function createWorkspace(userId: string, name: string, icon?: string): { 
     save('team', team);
     const svId = newId();
     const gettingStarted = createPage({
-      spaceId, userId, parentId: spaceId, parentTable: 'space', title: 'Welcome to Litpage', icon: '👋',
-      content: gettingStartedContent(), permissions: [{ type: 'user_permission', role: 'editor', user_id: userId }],
+      spaceId, userId, parentId: spaceId, parentTable: 'space', title: opts.welcome?.title ?? 'Welcome to Litpage', icon: opts.welcome?.icon ?? '👋',
+      content: opts.welcome?.content ?? gettingStartedContent(), permissions: [{ type: 'user_permission', role: 'editor', user_id: userId }],
     });
     const teamHome = createPage({
       spaceId, userId, parentId: teamId, parentTable: 'team', title: 'Team Home', icon: '🏠',
@@ -187,11 +190,11 @@ export function addMember(spaceId: string, userId: string, role: string) {
   });
 }
 
-/** Seed a small, current-looking demo workspace once. */
-export function seedDemoContent(spaceId: string, userId: string) {
+/** Seed a small, current-looking demo workspace once. Returns the new top-level page ids. */
+export function seedDemoContent(spaceId: string, userId: string): string[] {
   const space = getRecord<SpaceRecord>('space', spaceId);
-  if (!space || (space.settings as any)?.demo_seed_version) return;
-  tx(() => {
+  if (!space || (space.settings as any)?.demo_seed_version) return [];
+  return tx(() => {
     const roots: string[] = [];
     for (const template of TEMPLATES.filter((t) => ['roadmap', 'project-tracker', 'meeting-notes', 'team-wiki'].includes(t.id))) {
       const builder = new OpsBuilder(spaceId, userId, Date.now());
@@ -201,6 +204,7 @@ export function seedDemoContent(spaceId: string, userId: string) {
       for (const op of builder.ops) save(op.pointer.table, op.args);
     }
     save('space', { ...space, pages: [...(space.pages ?? []), ...roots], settings: { ...(space.settings ?? {}), demo_seed_version: 1 } });
+    return roots;
   });
 }
 
@@ -212,6 +216,7 @@ function demoTemplateSpec(id: string, spec: Spec): Spec {
     values: { ...row.values, rmDt: { date: dayOffset(ranges[i % ranges.length][0]), end: dayOffset(ranges[i % ranges.length][1]) } },
   }));
   if (!spec.db.views.some((view) => view.type === 'timeline')) spec.db.views = [...spec.db.views, { type: 'timeline', name: 'Timeline' }];
+  if (!spec.db.views.some((view) => view.type === 'chart')) spec.db.views = [...spec.db.views, { type: 'chart', name: 'Chart' }];
   return spec;
 }
 

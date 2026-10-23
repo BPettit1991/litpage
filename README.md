@@ -28,9 +28,9 @@ databases with a dozen views, share with fine-grained permissions, and bring you
 writing help. The whole app is one Node.js process with one SQLite file, small enough for a laptop or a single
 server.
 
-> **Try it:** [litpage-demo-production.up.railway.app](https://litpage-demo-production.up.railway.app), sign in with `demo@example.com` and the password `litpage-demo`
-> (“Continue with a password”). Everyone shares this account, account and admin changes are turned off, and the data
-> resets every hour. AI is not connected in the demo.
+> **Try the demo:** open [litpage-demo-production.up.railway.app](https://litpage-demo-production.up.railway.app) and click **Try the demo**, no sign-up.
+> You get your own workspace with sample pages, nobody else can see it, and it is deleted after 4 hours. AI is not
+> connected in the demo.
 
 <p align="center">
   <picture>
@@ -170,8 +170,13 @@ Set these as environment variables (in development, `apps/server/.env.local` is 
 | `NC_DATA_DIR` | `apps/server/data` | SQLite database and uploaded files. Mount a persistent volume here. |
 | `NC_PUBLIC_URL` | `http://127.0.0.1:5173` | Public address, used in links inside emails. |
 | `NC_BOOTSTRAP_EMAIL`, `NC_BOOTSTRAP_PASSWORD` | unset | Creates the first account on a fresh production install. |
-| `NC_DEMO_MODE` | unset | Set to `1` for a hardened public demo. Shared-account identity, workspace control, sharing, integrations, outbound actions and public exposure are blocked. |
-| `NC_DEMO_RESET_HOURS` | unset | In demo mode, wipe the configured data directory before opening SQLite and exit cleanly after this many hours. The platform must restart the service after any exit. |
+| `NC_DEMO_MODE` | unset | Set to `1` for a hardened public demo where every visitor gets a temporary workspace of their own. Account identity, workspace control, sharing, integrations, outbound actions and public exposure are blocked. |
+| `NC_DEMO_SANDBOX_HOURS` | `4` | In demo mode, how long a visitor's workspace lives before it is deleted. |
+| `NC_DEMO_MAX_SANDBOXES` | `300` | In demo mode, how many visitor workspaces may exist at once. When full, expired ones are deleted first, otherwise new visitors are asked to try again later. |
+| `NC_DEMO_MAX_RECORDS` | `5000` | In demo mode, blocks, database rows, comments and other records per visitor workspace. |
+| `NC_DEMO_MAX_UPLOAD_MB`, `NC_DEMO_MAX_FILES` | `25`, `50` | In demo mode, uploaded files per visitor workspace (each file is limited to 5 MB). |
+| `NC_DEMO_SANDBOXES_PER_IP_HOUR`, `NC_DEMO_SANDBOXES_PER_IP_DAY` | `5`, `20` | In demo mode, new workspaces per client address (behind a proxy, set `NC_TRUST_PROXY=1`). |
+| `NC_DEMO_RESET_HOURS` | unset | In demo mode, wipe the configured data directory before opening SQLite and exit cleanly after this many hours (a safety net; keep it longer than `NC_DEMO_SANDBOX_HOURS`). The platform must restart the service after any exit. |
 | `NC_SMTP_URL`, `NC_MAIL_FROM` | unset | Outgoing mail (`smtp://` or `smtps://` URL). Without it, mail is only kept in the development outbox. |
 | `NC_TRUST_PROXY` | unset | Set to `1` behind a reverse proxy so client addresses come from `X-Forwarded-*`. |
 | `NC_ALLOWED_ORIGINS` | unset | Extra origins allowed to call the API, comma separated. |
@@ -179,7 +184,9 @@ Set these as environment variables (in development, `apps/server/.env.local` is 
 
 ### Demo mode
 
-Set `NC_DEMO_MODE=1` when publishing a disposable shared workspace. Visitors can edit pages and upload files up to 5 MB, while account identity, workspace administration, invitations, sharing and publishing, integrations and tokens, webhooks, public forms, and other outbound actions are refused by the server. Add `NC_DEMO_RESET_HOURS` to wipe the data directory on start and restart the process periodically. Treat all demo data as disposable and configure the platform to restart on any exit.
+Set `NC_DEMO_MODE=1` to publish a public demo. The login page shows **Try the demo**: one click creates a temporary account and a workspace named “Litpage Demo” with a “Start here” page and sample pages (Roadmap, Projects, Meeting notes, Team wiki), and signs the visitor in. Each visitor only ever sees their own workspace, and it is deleted with everything in it (pages, comments, history, search entries, files) `NC_DEMO_SANDBOX_HOURS` after it was created; a background job checks every few minutes. “Start over” in the notice bar replaces it with a fresh one. Workspaces per client address, live workspaces, records and uploads are limited (see the table above).
+
+The server refuses account identity, workspace administration, invitations, sharing and publishing, integrations and tokens, webhooks, public forms, AI and other outbound actions, and anything that would reach another visitor. If `NC_BOOTSTRAP_EMAIL` and `NC_BOOTSTRAP_PASSWORD` are set, the login page also keeps the email form so that shared account can sign in as before; without them the email form is hidden. `NC_DEMO_RESET_HOURS` additionally wipes the data directory on start and restarts the process periodically. Treat all demo data as disposable and configure the platform to restart on any exit.
 
 ## AI with your own key
 

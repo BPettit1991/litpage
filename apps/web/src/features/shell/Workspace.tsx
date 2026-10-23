@@ -1,9 +1,9 @@
 // Workspace shell: sidebar + main frame (topbar + content) + peek + global modals.
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { BlockRecord, SpaceRecord, SpaceViewRecord, TeamRecord, UserSettingsRecord } from '@nc/shared/records.ts';
 import { navigate, openPage, useLocation, spaceDomain } from '../../lib/router.ts';
 import { currentSpaceView } from '../../lib/store/session.ts';
-import { useSession } from '../../lib/store/session.ts';
+import { useSession, type DemoMode } from '../../lib/store/session.ts';
 import { useUI } from '../../lib/store/ui.ts';
 import { records } from '../../lib/store/records.ts';
 import { api } from '../../lib/api.ts';
@@ -22,7 +22,7 @@ import { AgentPage } from '../agents/AgentPage.tsx';
 import { installPersonHoverDelegation } from '../presence/PersonHoverCard.tsx';
 import { GlobalModals } from './GlobalModals.tsx';
 import { usePageLoader } from '../page/usePageLoader.ts';
-import { setPresencePage, onResync } from '../../lib/store/sync.ts';
+import { disconnectRealtime, setPresencePage, onResync } from '../../lib/store/sync.ts';
 import { transactions } from '../../lib/store/transactions.ts';
 import { useApplyUserSettings } from '../settings/userSettings.ts';
 import { acceptPendingInvite, pendingInvite, rememberInvite } from './invite.ts';
@@ -127,7 +127,7 @@ export function Workspace() {
 
   return (
     <div className="lit-app-inner" style={{ ['--sidebar-width' as any]: `${sidebarOpen ? sidebarWidth : 0}px` }}>
-      {demo.enabled && <div className="lp-demo-notice">{demo.resetHours ? tDemo(demo.resetHours) : tDemo()}</div>}
+      {demo.enabled && <DemoNotice demo={demo} />}
       <div className="lit-cursor-listener">
         <Sidebar />
         <main className="lit-frame">
@@ -138,6 +138,38 @@ export function Workspace() {
         {peek && <PeekPanel pageId={peek.pageId} mode={peek.mode} />}
       </div>
       <GlobalModals />
+    </div>
+  );
+}
+
+/** Public demo notice bar: a visitor's own sandbox (with "Start over") or the shared account. */
+function DemoNotice({ demo }: { demo: DemoMode }) {
+  const [busy, setBusy] = useState(false);
+  const expires = demo.sandbox?.expires;
+  useEffect(() => {
+    if (!expires) return;
+    // the sandbox and its session end: back to the login page
+    const tm = setTimeout(() => location.assign('/'), Math.min(Math.max(expires - Date.now() + 2000, 1000), 2_147_000_000));
+    return () => clearTimeout(tm);
+  }, [expires]);
+  if (!demo.sandbox) return <div className="lp-demo-notice">{demo.resetHours ? tDemo(demo.resetHours) : tDemo()}</div>;
+  const startOver = async () => {
+    setBusy(true);
+    // this tab moves to the new sandbox; other tabs of the old one are signed out
+    disconnectRealtime();
+    try {
+      const res = await api<{ path: string }>('startDemoSandbox');
+      location.assign(res.path);
+    } catch (e: any) {
+      setBusy(false);
+      useUI.getState().toast(e?.message || t('lp.auth.the_demo_could_not_start', 'The demo could not start. Try again in a moment.'));
+      void useSession.getState().load();
+    }
+  };
+  return (
+    <div className="lp-demo-notice">
+      <span>{t('lp.shell.demo_sandbox_notice', "Demo sandbox: this workspace is only yours and is deleted {hours} hours after it was created. Don't enter personal information.", { hours: demo.sandboxHours ?? 4 })}</span>
+      <button type="button" className="lp-demo-notice-action" disabled={busy} onClick={() => void startOver()}>{t('lp.shell.start_over', 'Start over')}</button>
     </div>
   );
 }

@@ -52,6 +52,10 @@ export function connectRealtime(spaces: string[]) {
       });
     } else if (msg.type === 'presence') {
       useUI.getState().setPresence(msg.pageId, msg.viewers);
+    } else if (msg.type === 'session_ended') {
+      // the account is gone (a deleted demo sandbox): start over from the root (login page, or the browser's new sandbox)
+      disconnectRealtime();
+      location.assign('/');
     }
   };
   sock.onclose = () => {

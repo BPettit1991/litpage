@@ -122,6 +122,15 @@ class Realtime {
     return false;
   }
 
+  /** The user's account is gone (a deleted demo sandbox): tell their open tabs and close the connections. */
+  endUserSessions(userId: string) {
+    for (const c of this.clients) {
+      if (c.userId !== userId) continue;
+      if (c.ws.readyState === 1) c.ws.send(JSON.stringify({ type: 'session_ended' }));
+      c.ws.close();
+    }
+  }
+
   notifyUser(userId: string, payload: unknown) {
     const s = JSON.stringify(payload);
     for (const c of this.clients) if (c.userId === userId && c.ws.readyState === 1) c.ws.send(s);

@@ -9,10 +9,19 @@ interface SessionState {
   status: 'loading' | 'anonymous' | 'ready' | 'onboarding';
   userId: string | null;
   spaceId: string | null;
-  demoMode: { enabled: boolean; resetHours?: number };
+  demoMode: DemoMode;
   load: () => Promise<void>;
   setSpace: (spaceId: string) => void;
   logout: () => Promise<void>;
+}
+
+/** Public demo (server NC_DEMO_MODE=1): per-visitor sandboxes, the optional shared account, this visitor's sandbox. */
+export interface DemoMode {
+  enabled: boolean;
+  resetHours?: number;
+  sandboxHours?: number;
+  sharedAccount?: boolean;
+  sandbox?: { createdTime: number; expires: number };
 }
 
 const LAST_SPACE = 'nc:lastSpaceId';
@@ -45,7 +54,7 @@ export const useSession = create<SessionState>((set, get) => ({
       set({ status: 'ready', userId, spaceId, demoMode: res.demoMode ?? { enabled: false } });
       connectRealtime(spaceIds);
     } catch (e: any) {
-      if (e?.status === 401) set({ status: 'anonymous', userId: null, spaceId: null, demoMode: { enabled: false } });
+      if (e?.status === 401) set({ status: 'anonymous', userId: null, spaceId: null, demoMode: e?.data?.demoMode ?? { enabled: false } });
       else {
         console.error(e);
         set({ status: 'anonymous' });

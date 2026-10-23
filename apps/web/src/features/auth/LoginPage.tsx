@@ -248,6 +248,10 @@ function AuthScreen({ mode }: { mode: 'login' | 'signup' }) {
   const [mfaMethod, setMfaMethod] = useState<'totp' | 'backup'>('totp');
   const [mfaCode, setMfaCode] = useState('');
   const [backupLeft, setBackupLeft] = useState<number | null>(null);
+  // public demo: "Try the demo" signs in to a new sandbox; without a shared account there is no email sign-in
+  const demo = useSession((s) => s.demoMode);
+  const [demoBusy, setDemoBusy] = useState(false);
+  const showEmailForm = !demo.enabled || !!demo.sharedAccount;
 
   useEffect(() => {
     document.title = mode === 'signup' ? `Litpage - ${t('lp.auth.sign_up', 'Sign up')}` : `Litpage - ${t('lp.auth.log_in', 'Log in')}`;
@@ -351,6 +355,35 @@ function AuthScreen({ mode }: { mode: 'login' | 'signup' }) {
     }
   };
 
+  const startDemo = async () => {
+    setError(null);
+    setDemoBusy(true);
+    try {
+      const res = await api<{ path: string }>('startDemoSandbox');
+      try {
+        sessionStorage.setItem('nc:afterLogin', res.path);
+      } catch {
+        /* the start page opens anyway */
+      }
+      await useSession.getState().load();
+    } catch (e: any) {
+      setError(e?.message || t('lp.auth.the_demo_could_not_start', 'The demo could not start. Try again in a moment.'));
+    } finally {
+      setDemoBusy(false);
+    }
+  };
+
+  const demoBlock = demo.enabled ? (
+    <div className="nc-auth-demo">
+      <button className="nc-auth-submit" type="button" data-testid="try-demo" disabled={demoBusy} onClick={() => void startDemo()}>
+        {demoBusy ? <span className="nc-auth-spinner" /> : t('lp.auth.try_the_demo', 'Try the demo')}
+      </button>
+      <div className="nc-auth-hint-line nc-auth-demo-hint">
+        {t('lp.auth.demo_sandbox_hint', 'You get your own temporary workspace. It is deleted after {hours} hours. No sign-up.', { hours: demo.sandboxHours ?? 4 })}
+      </div>
+    </div>
+  ) : null;
+
   const submitLabel = step === 'password' ? t('lp.auth.continue_with_a_password', 'Continue with a password') : step === 'mfa' ? t('lp.auth.continue', 'Continue') : t('lp.auth.continue', 'Continue');
 
   const switchLink = mode === 'signup'
@@ -382,7 +415,9 @@ function AuthScreen({ mode }: { mode: 'login' | 'signup' }) {
 
   const form = backupInterstitial ?? (
     <div className="lit-login nc-auth-login">
-      <form
+      {demoBlock}
+      {demoBlock && showEmailForm && <Divider />}
+      {showEmailForm && <form
         noValidate
         onSubmit={(e) => {
           e.preventDefault();
@@ -489,7 +524,7 @@ function AuthScreen({ mode }: { mode: 'login' | 'signup' }) {
         <button className="nc-auth-submit" type="submit" disabled={busy}>
           {busy ? <span className="nc-auth-spinner" /> : submitLabel}
         </button>
-      </form>
+      </form>}
       {error && <div role="alert" className="nc-auth-error">{error}</div>}
       {step === 'code' && (
         <div className="nc-auth-secondary">
@@ -542,9 +577,13 @@ function AuthScreen({ mode }: { mode: 'login' | 'signup' }) {
           </button>
         </div>
       )}
-      <Divider />
-      <Providers mode={mode} />
-      <div className="nc-auth-switch">{switchLink}</div>
+      {showEmailForm && (
+        <>
+          <Divider />
+          <Providers mode={mode} />
+          <div className="nc-auth-switch">{switchLink}</div>
+        </>
+      )}
       <Terms />
     </div>
   );

@@ -9,6 +9,7 @@ interface SessionState {
   status: 'loading' | 'anonymous' | 'ready' | 'onboarding';
   userId: string | null;
   spaceId: string | null;
+  demoMode: { enabled: boolean; resetHours?: number };
   load: () => Promise<void>;
   setSpace: (spaceId: string) => void;
   logout: () => Promise<void>;
@@ -20,6 +21,7 @@ export const useSession = create<SessionState>((set, get) => ({
   status: 'loading',
   userId: null,
   spaceId: null,
+  demoMode: { enabled: false },
   async load() {
     try {
       const res = await api('loadAccountData');
@@ -40,10 +42,10 @@ export const useSession = create<SessionState>((set, get) => ({
         /* ignore */
       }
       const spaceId = last && spaceIds.includes(last) ? last : spaceIds[0];
-      set({ status: 'ready', userId, spaceId });
+      set({ status: 'ready', userId, spaceId, demoMode: res.demoMode ?? { enabled: false } });
       connectRealtime(spaceIds);
     } catch (e: any) {
-      if (e?.status === 401) set({ status: 'anonymous', userId: null, spaceId: null });
+      if (e?.status === 401) set({ status: 'anonymous', userId: null, spaceId: null, demoMode: { enabled: false } });
       else {
         console.error(e);
         set({ status: 'anonymous' });
@@ -61,7 +63,7 @@ export const useSession = create<SessionState>((set, get) => ({
   async logout() {
     await api('signOut');
     disconnectRealtime();
-    set({ status: 'anonymous', userId: null, spaceId: null });
+    set({ status: 'anonymous', userId: null, spaceId: null, demoMode: { enabled: false } });
     location.href = '/login';
   },
 }));

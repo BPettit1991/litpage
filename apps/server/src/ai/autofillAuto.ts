@@ -11,6 +11,7 @@ import { applyTransactions, onCommit, type CommitInfo } from '../records.ts';
 import { aiConfigured, logAiError, type ClaudeLike } from './client.ts';
 import { runAutofill } from './service.ts';
 import type { AutofillKind } from './prompts.ts';
+import { isDemoMode } from '../demo.ts';
 
 export interface AutofillConfig {
   kind: AutofillKind;
@@ -50,6 +51,7 @@ function rowOf(b: BlockRecord | undefined): BlockRecord | null {
 }
 
 async function fill(rowId: string, userId: string) {
+  if (isDemoMode()) return;
   const row = getRecord<BlockRecord>('block', rowId);
   if (!row || row.alive === false || row.parent_table !== 'collection') return;
   const col = getRecord<CollectionRecord>('collection', row.parent_id);
@@ -83,7 +85,7 @@ function schedule(rowId: string, userId: string) {
 
 /** Commit hook: schedule autofill for rows whose content changed (not by autofill itself). */
 export function onAutofillCommit(info: CommitInfo) {
-  if (!aiConfigured()) return;
+  if (isDemoMode() || !aiConfigured()) return;
   if (info.transactions.some((t) => t.debug?.userAction === AUTOFILL_ACTION || t.debug?.userAction === 'aiAutofill')) return;
   const rows = new Set<string>();
   for (const ch of info.changes) {

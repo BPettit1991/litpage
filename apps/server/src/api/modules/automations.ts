@@ -28,6 +28,7 @@ import {
 } from '../../automations/engine.ts';
 import { userTimeZone } from '../../automations/templates.ts';
 import { automationOwner, blockOwner, copySecrets, propertyOwner, resolveHeaders, sealActions, WebhookSecretError } from '../../webhookSecrets.ts';
+import { DEMO_MESSAGE, isDemoMode } from '../../demo.ts';
 import { cancelJob } from '../../scheduler.ts';
 
 type Handler = (ctx: Ctx, body: any) => any;
@@ -459,6 +460,7 @@ export const handlers: Record<string, Handler> = {
           }
           results.push({ stepId: step.id, ok: true });
         } else if (step.type === 'webhook') {
+          if (isDemoMode()) throw new AutomationError(DEMO_MESSAGE);
           if (!webhooksAllowed(src.spaceId)) throw new AutomationError('This feature is disabled in your workspace');
           if (!hit(`button-webhook:${src.block?.id ?? src.page?.id}`, 30, 60_000)) throw new AutomationError('Too many webhook requests. Try again later.');
           let host = step.url;

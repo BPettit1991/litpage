@@ -3,6 +3,7 @@
 // background and cached
 // (10 minutes; 1 minute after a failure, keeping the last good list) so model lookups stay synchronous.
 import { openaiConfig, scrub, type OpenAIConfig } from './config.ts';
+import { isDemoMode } from '../../demo.ts';
 
 export interface OpenAIModel {
   slug: string;
@@ -98,6 +99,7 @@ export function refreshOpenAIModels(): Promise<OpenAIModel[] | null> {
 
 /** The cached list for the configured endpoint (null until loaded); starts a background refresh when stale. */
 export function cachedOpenAIModels(): OpenAIModel[] | null {
+  if (isDemoMode()) return null;
   const cfg = openaiConfig();
   if (!cfg) return null;
   const fresh = cache && cache.base === cfg.baseUrl;

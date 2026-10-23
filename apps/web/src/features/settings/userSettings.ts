@@ -60,6 +60,27 @@ export interface UserPrefs {
   [k: string]: unknown;
 }
 
+const DEMO_DISPLAY_PREFS = new Set(['locale', 'preferred_theme', 'high_contrast', 'enter_new_line', 'number_format', 'text_direction_controls', 'start_day_of_week', 'date_format', 'time_zone_auto', 'time_zone', 'open_links_desktop', 'start_page']);
+const demoPrefKey = (key: string) => `nc:demo-pref:${key}`;
+function demoLocalPrefs(): UserPrefs {
+  const out: UserPrefs = {};
+  const legacyKeys: Record<string, string> = { locale: 'nc:locale', preferred_theme: 'nc:theme' };
+  for (const key of DEMO_DISPLAY_PREFS) {
+    try {
+      const raw = localStorage.getItem(demoPrefKey(key)) ?? (legacyKeys[key] ? localStorage.getItem(legacyKeys[key]) : null);
+      if (raw !== null) out[key] = JSON.parse(raw);
+    } catch {
+      try {
+        const raw = legacyKeys[key] ? localStorage.getItem(legacyKeys[key]) : null;
+        if (raw !== null) out[key] = raw;
+      } catch {
+        /* ignore unavailable or invalid local preferences */
+      }
+    }
+  }
+  return out;
+}
+
 export const PREF_DEFAULTS: Required<Pick<UserPrefs,
   'preferred_theme' | 'high_contrast' | 'enter_new_line' | 'number_format' | 'text_direction_controls' | 'start_day_of_week' | 'date_format' |
   'time_zone_auto' | 'open_links_desktop' | 'start_page' | 'view_history' | 'profile_discoverable' | 'support_access' | 'notify_meeting_join' |
@@ -95,11 +116,13 @@ function uid(): string {
 }
 
 export function getUserPrefs(): UserPrefs {
-  return (records.get<UserSettingsRecord>('user_settings', uid())?.settings ?? {}) as UserPrefs;
+  const server = (records.get<UserSettingsRecord>('user_settings', uid())?.settings ?? {}) as UserPrefs;
+  return useSession.getState().demoMode.enabled ? { ...server, ...demoLocalPrefs() } : server;
 }
 
 export function usePrefs(): UserPrefs {
-  return (useUserSettings()?.settings ?? {}) as UserPrefs;
+  const settings = useUserSettings()?.settings ?? {};
+  return useSession.getState().demoMode.enabled ? { ...(settings as UserPrefs), ...demoLocalPrefs() } : settings as UserPrefs;
 }
 
 export function prefValue<K extends keyof typeof PREF_DEFAULTS>(p: UserPrefs, key: K): (typeof PREF_DEFAULTS)[K] {
@@ -111,10 +134,18 @@ export function prefValue<K extends keyof typeof PREF_DEFAULTS>(p: UserPrefs, ke
 export function savePrefs(patch: Partial<UserPrefs>) {
   const id = uid();
   if (!id) return;
+  const serverPatch: Partial<UserPrefs> = {};
+  const demo = useSession.getState().demoMode.enabled;
+  for (const [key, value] of Object.entries(patch)) {
+    if (demo && DEMO_DISPLAY_PREFS.has(key)) {
+      try { localStorage.setItem(demoPrefKey(key), JSON.stringify(value)); } catch { /* ignore */ }
+    } else (serverPatch as any)[key] = value;
+  }
+  if (!Object.keys(serverPatch).length) return;
   const exists = !!records.get<UserSettingsRecord>('user_settings', id);
   transactions.run('', 'updateUserSettings', (tx) => {
-    if (!exists) tx.set('user_settings', id, [], { id, settings: patch });
-    else tx.update('user_settings', id, ['settings'], patch);
+    if (!exists) tx.set('user_settings', id, [], { id, settings: serverPatch });
+    else tx.update('user_settings', id, ['settings'], serverPatch);
   }, { skipHistory: true });
 }
 
@@ -187,7 +218,8 @@ const RELOAD_GUARD = 'nc:localeReloaded';
 /** Called once by Workspace: syncs user_settings → UI (theme, contrast, locale). */
 export function useApplyUserSettings() {
   const settings = useUserSettings();
-  const prefs = (settings?.settings ?? {}) as UserPrefs;
+  const demo = useSession((s) => s.demoMode.enabled);
+  const prefs = demo ? getUserPrefs() : (settings?.settings ?? {}) as UserPrefs;
   const theme = prefs.preferred_theme;
   const locale = prefs.locale;
   const contrast = prefs.high_contrast;
@@ -202,7 +234,7 @@ export function useApplyUserSettings() {
       /* ignore */
     }
     if (!local && useUI.getState().theme !== theme) useUI.getState().setTheme(theme);
-  }, [theme]);
+  }, [theme, demo]);
 
   useEffect(() => {
     applyContrast(contrast ?? 'system');
@@ -211,7 +243,7 @@ export function useApplyUserSettings() {
     const on = () => applyContrast('system');
     mq?.addEventListener?.('change', on);
     return () => mq?.removeEventListener?.('change', on);
-  }, [contrast]);
+  }, [contrast, demo]);
 
   // Show my view history: older clients saved a boolean the server never read — carry an opt-out over once
   const legacyOptOut = prefs.view_history === false && !prefs.page_view_history;
@@ -236,7 +268,7 @@ export function useApplyUserSettings() {
       /* ignore */
     }
     setLocale(normalized, { reload: true });
-  }, [locale]);
+  }, [locale, demo]);
 }
 
 /** `?target=` deep links → settings sections (the param is removed after opening). */

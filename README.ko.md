@@ -14,6 +14,7 @@
 </p>
 
 <p align="center">
+  <a href="https://litpage-demo-production.up.railway.app"><b>라이브 데모</b></a> &nbsp;|&nbsp;
   <a href="#빠른-시작"><b>빠른 시작</b></a> &nbsp;|&nbsp;
   <a href="#기능-둘러보기"><b>기능 둘러보기</b></a> &nbsp;|&nbsp;
   <a href="#내-키로-쓰는-ai"><b>AI</b></a> &nbsp;|&nbsp;
@@ -23,6 +24,10 @@
 </p>
 
 Litpage는 직접 운영하는 오픈소스 워크스페이스입니다. 블록 편집기로 문서를 쓰고, 페이지와 팀을 정리하고, 여러 보기를 갖춘 데이터베이스로 일을 관리하고, 세밀한 권한으로 공유하고, 내 API 키로 AI 채팅, 에이전트, 글쓰기 도움을 씁니다. 앱 전체가 Node.js 프로세스 하나와 SQLite 파일 하나로 동작해서 노트북이나 서버 한 대로 충분합니다.
+
+> **써 보기:** [litpage-demo-production.up.railway.app](https://litpage-demo-production.up.railway.app)에서 `demo@example.com`과 비밀번호 `litpage-demo`로 로그인하세요
+> (“Continue with a password”). 모두가 이 계정을 함께 쓰고, 계정과 관리 설정 변경은 막혀 있으며, 데이터는 24시간마다
+> 초기화됩니다. 데모에는 AI가 연결되어 있지 않습니다.
 
 <p align="center">
   <picture>
@@ -145,10 +150,16 @@ pnpm build && pnpm start
 | `NC_DATA_DIR` | `apps/server/data` | SQLite 데이터베이스와 올린 파일. 여기에 영구 볼륨을 연결합니다. |
 | `NC_PUBLIC_URL` | `http://127.0.0.1:5173` | 공개 주소. 메일 속 링크에 씁니다. |
 | `NC_BOOTSTRAP_EMAIL`, `NC_BOOTSTRAP_PASSWORD` | 없음 | 새로 설치한 프로덕션에서 첫 계정을 만듭니다. |
+| `NC_DEMO_MODE` | 없음 | `1`로 설정하면 공유 계정을 쓰는 공개 데모를 켭니다. 계정 정보, 워크스페이스 관리, 공유, 연동, 외부 동작, 공개 노출을 막습니다. |
+| `NC_DEMO_RESET_HOURS` | 없음 | 데모 모드에서 SQLite를 열기 전에 데이터 디렉터리를 비우고 지정한 시간이 지나면 정상 종료합니다. 플랫폼은 모든 종료 후 서비스를 다시 시작해야 합니다. |
 | `NC_SMTP_URL`, `NC_MAIL_FROM` | 없음 | 보내는 메일(`smtp://` 또는 `smtps://` URL). 없으면 메일은 개발용 보관함에만 저장됩니다. |
 | `NC_TRUST_PROXY` | 없음 | 리버스 프록시 뒤에서 `1`로 두면 클라이언트 주소를 `X-Forwarded-*`에서 읽습니다. |
 | `NC_ALLOWED_ORIGINS` | 없음 | API 호출을 허용할 추가 출처(쉼표로 구분) |
 | AI 변수 | 없음 | [내 키로 쓰는 AI](#내-키로-쓰는-ai) 참고 |
+
+### 데모 모드
+
+`NC_DEMO_MODE=1`로 폐기 가능한 공유 워크스페이스를 공개할 수 있습니다. 방문자는 페이지를 편집하고 5 MB 이하의 파일을 올릴 수 있습니다. 계정 정보, 워크스페이스 관리, 초대, 공유와 게시, 연동과 토큰, 웹훅, 공개 양식, 외부로 나가는 동작은 서버에서 거부됩니다. `NC_DEMO_RESET_HOURS`를 함께 설정하면 시작할 때 데이터 디렉터리를 비우고 일정 시간마다 프로세스를 다시 시작합니다. 데모 데이터는 폐기된다고 보고 플랫폼이 모든 종료 후 다시 시작하도록 설정하세요.
 
 ## 내 키로 쓰는 AI
 

@@ -22,6 +22,7 @@ import type { RichText } from '@nc/shared/richtext.ts';
 import { childrenOf, db, getRecord, putRecord } from '../db.ts';
 import { applyTransactions, blockRole, onBeforePersist, onCommit, TransactionError, type CommitInfo } from '../records.ts';
 import { automationOwner, copySecrets, migrateWebhookSecrets, resolveHeaders, sealActions, sealChangedRecords } from '../webhookSecrets.ts';
+import { DEMO_MESSAGE, isDemoMode } from '../demo.ts';
 import { realtime } from '../realtime.ts';
 import { messageQueryContext, readableQueryContext, viewerQueryContext } from '../queryctx.ts';
 import { redactDatabaseRecord } from '../propaccess.ts';
@@ -203,6 +204,7 @@ function payloadPlanner(a: AutomationRecord, input: RunInput, spaceId: string, d
 }
 
 async function sendWebhook(a: AutomationRecord, step: Extract<AutomationAction, { type: 'webhook' }>, planner: AutomationPlanner, col: CollectionRecord) {
+  if (isDemoMode()) throw new AutomationError(DEMO_MESSAGE, 'webhook_disabled', step.id);
   if (!webhooksAllowed(col.space_id as string)) throw new AutomationError('This feature is disabled in your workspace', 'webhook_disabled', step.id);
   if (!hit(`automation-webhook:${a.id}`, 60, 60_000) || !hit(`automation-webhook-space:${col.space_id}`, 600, 60_000)) throw new AutomationError('Too many webhook requests. Try again later.', 'rate_limited', step.id);
   // the creator's view: hidden values are off the page, "No access" properties out of the schema (payloadPlanner)
@@ -243,6 +245,7 @@ function sendNotifications(a: AutomationRecord, step: Extract<AutomationAction, 
 
 /** Run one automation for one trigger event (or a schedule tick). Never throws. */
 export async function runAutomation(a: AutomationRecord, input: RunInput): Promise<RunResult> {
+  if (isDemoMode()) return { status: 'error', message: DEMO_MESSAGE, created: [], edited: [] };
   const started = Date.now();
   const empty: RunResult = { status: 'skipped', created: [], edited: [] };
   const col = getRecord<CollectionRecord>('collection', a.parent_id);
@@ -370,6 +373,7 @@ function remapIds<T>(value: T, idMap: Map<string, string>): T {
  *  The copies belong to the person who duplicated the database and act on the copy: the source database id, its
  *  host block and its views are re-pointed. Repeating-template automations are not copied (templates aren't). */
 function copyAutomationsOfDuplicates(info: CommitInfo) {
+  if (isDemoMode()) return;
   for (const ch of info.changes) {
     if (ch.table !== 'block') continue;
     const b = ch.record as BlockRecord;

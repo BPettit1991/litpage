@@ -33,6 +33,7 @@ import { agentModelPolicy, agentPeople, agentRole, agentsAvailable, getAgent, or
 import { agentSystem } from './prompts.ts';
 import { triggerBlock, isNoAction } from './prompts.ts';
 import { agentMcpTools, agentToolNames, callKey, runAgentTool, type PendingReview, type RunToolContext } from './tools.ts';
+import { DEMO_MESSAGE, isDemoMode } from '../demo.ts';
 
 /** Message shown when an agent is paused because no editor can access it. */
 export const ORPHANED_MESSAGE = 'This agent is paused because no one has full access. Grant full access to someone in Share settings, then try again.';
@@ -373,6 +374,7 @@ export function readInstructions(agent: AgentRecord, cfg: AgentConfig = agent.da
 
 /** Why a run can't start (null = ok). Failing checks end the run with that message (Activity shows it). */
 function preflight(agent: AgentRecord | undefined, run: RunRow): { status: RunStatus; error: string; code?: string; pause?: PausedReason } | null {
+  if (isDemoMode()) return { status: 'failed', error: DEMO_MESSAGE, code: 'demo' };
   if (!agent || agent.alive === false) return { status: 'failed', error: 'This agent was moved to Trash.' };
   if (run.payload.blocked) return { status: 'failed', error: 'The run stopped because this agent cannot open a page or database it needs.' };
   const space = getRecord<SpaceRecord>('space', agent.space_id);

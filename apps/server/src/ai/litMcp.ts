@@ -29,6 +29,7 @@ import { listSkills, skillById } from './skills.ts';
 import { TOOL_DEFS } from './tools/defs.ts';
 import { runTool } from './tools/registry.ts';
 import type { AgentEnv } from './tools/types.ts';
+import { DEMO_MESSAGE, isDemoMode } from '../demo.ts';
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS mcp_tokens (
@@ -390,6 +391,7 @@ interface McpAuth {
 /** Why a personal access token (a MCP token) can't be used now, wherever it is used — /api/mcp or the public
  *  API: "Allow MCP" is off, or its client isn't approved (null = usable). */
 export function personalTokenBlocked(auth: McpAuth): string | null {
+  if (isDemoMode()) return DEMO_MESSAGE;
   if (!workspaceAiPolicy(auth.spaceId).litMcp) return 'Litpage MCP is turned off for this workspace.';
   return clientBlocked(auth);
 }
@@ -593,6 +595,7 @@ export interface McpHttpResult {
 
 /** POST /api/mcp — authenticate, rate limit, dispatch (single message or batch). */
 export async function handleMcpHttp(authorization: string | undefined, body: unknown, sessionId?: string): Promise<McpHttpResult> {
+  if (isDemoMode()) return { status: 403, body: { jsonrpc: '2.0', id: null, error: { code: -32003, message: DEMO_MESSAGE } } };
   const auth = tokenAuth(authorization);
   if (!auth) return { status: 401, body: { jsonrpc: '2.0', id: null, error: { code: -32001, message: 'Unauthorized: create an access token in Settings → Litpage MCP.' } }, headers: { 'www-authenticate': 'Bearer realm="Litpage MCP"' } };
   if (!workspaceAiPolicy(auth.spaceId).litMcp) return { status: 403, body: { jsonrpc: '2.0', id: null, error: { code: -32003, message: 'Litpage MCP is turned off for this workspace.' } } };

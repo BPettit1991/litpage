@@ -3,8 +3,11 @@
 // keep the password in sync; they sign in with "Continue with password". Nothing happens when either is unset.
 import { newId } from '@nc/shared/ids.ts';
 import { findUserIdByEmail, getRecord, putRecord } from './db.ts';
-import { createUser, createWorkspace } from './seed.ts';
+import { createUser, createWorkspace, seedDemoContent } from './seed.ts';
+import { isDemoMode } from './demo.ts';
 import { setPassword } from './auth.ts';
+import { disableMfa } from './mfa.ts';
+import { deleteAllPasskeys } from './passkeys.ts';
 import type { UserRecord } from '@nc/shared/records.ts';
 
 export function bootstrapOwner() {
@@ -16,10 +19,19 @@ export function bootstrapOwner() {
     userId = newId();
     const user = createUser(userId, email, process.env.NC_BOOTSTRAP_NAME?.trim() || email.split('@')[0]);
     putRecord('lit_user', { ...user, onboarding_completed: true });
-    createWorkspace(userId, process.env.NC_BOOTSTRAP_WORKSPACE?.trim() || 'Workspace');
+    const created = createWorkspace(userId, process.env.NC_BOOTSTRAP_WORKSPACE?.trim() || 'Workspace');
+    if (isDemoMode()) seedDemoContent(created.space.id, userId);
     console.log('[server] bootstrap: created the first account');
   } else if (getRecord<UserRecord>('lit_user', userId)?.onboarding_completed === false) {
     putRecord('lit_user', { ...getRecord<UserRecord>('lit_user', userId)!, onboarding_completed: true });
   }
   setPassword(userId, password);
+  if (isDemoMode()) {
+    // A deployment can be switched to demo mode without wiping first. Remove old second factors so the published password remains usable.
+    disableMfa(userId);
+    deleteAllPasskeys(userId);
+    const root = getRecord<any>('user_root', userId);
+    const view = root?.space_views?.map((id: string) => getRecord<any>('space_view', id)).find((v: any) => v?.alive !== false);
+    if (view) seedDemoContent(view.space_id, userId);
+  }
 }

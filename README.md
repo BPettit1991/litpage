@@ -14,6 +14,7 @@
 </p>
 
 <p align="center">
+  <a href="https://litpage-demo-production.up.railway.app"><b>Live demo</b></a> &nbsp;|&nbsp;
   <a href="#quick-start"><b>Quick start</b></a> &nbsp;|&nbsp;
   <a href="#feature-tour"><b>Feature tour</b></a> &nbsp;|&nbsp;
   <a href="#ai-with-your-own-key"><b>AI</b></a> &nbsp;|&nbsp;
@@ -26,6 +27,10 @@ Litpage is an open-source workspace you run yourself. Write in a block editor, o
 databases with a dozen views, share with fine-grained permissions, and bring your own AI key for chat, agents and
 writing help. The whole app is one Node.js process with one SQLite file, small enough for a laptop or a single
 server.
+
+> **Try it:** [litpage-demo-production.up.railway.app](https://litpage-demo-production.up.railway.app), sign in with `demo@example.com` and the password `litpage-demo`
+> (“Continue with a password”). Everyone shares this account, account and admin changes are turned off, and the data
+> resets every 24 hours. AI is not connected in the demo.
 
 <p align="center">
   <picture>
@@ -165,10 +170,16 @@ Set these as environment variables (in development, `apps/server/.env.local` is 
 | `NC_DATA_DIR` | `apps/server/data` | SQLite database and uploaded files. Mount a persistent volume here. |
 | `NC_PUBLIC_URL` | `http://127.0.0.1:5173` | Public address, used in links inside emails. |
 | `NC_BOOTSTRAP_EMAIL`, `NC_BOOTSTRAP_PASSWORD` | unset | Creates the first account on a fresh production install. |
+| `NC_DEMO_MODE` | unset | Set to `1` for a hardened public demo. Shared-account identity, workspace control, sharing, integrations, outbound actions and public exposure are blocked. |
+| `NC_DEMO_RESET_HOURS` | unset | In demo mode, wipe the configured data directory before opening SQLite and exit cleanly after this many hours. The platform must restart the service after any exit. |
 | `NC_SMTP_URL`, `NC_MAIL_FROM` | unset | Outgoing mail (`smtp://` or `smtps://` URL). Without it, mail is only kept in the development outbox. |
 | `NC_TRUST_PROXY` | unset | Set to `1` behind a reverse proxy so client addresses come from `X-Forwarded-*`. |
 | `NC_ALLOWED_ORIGINS` | unset | Extra origins allowed to call the API, comma separated. |
 | AI variables | unset | See [AI with your own key](#ai-with-your-own-key). |
+
+### Demo mode
+
+Set `NC_DEMO_MODE=1` when publishing a disposable shared workspace. Visitors can edit pages and upload files up to 5 MB, while account identity, workspace administration, invitations, sharing and publishing, integrations and tokens, webhooks, public forms, and other outbound actions are refused by the server. Add `NC_DEMO_RESET_HOURS` to wipe the data directory on start and restart the process periodically. Treat all demo data as disposable and configure the platform to restart on any exit.
 
 ## AI with your own key
 

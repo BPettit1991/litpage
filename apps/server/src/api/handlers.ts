@@ -26,6 +26,7 @@ import { passwordProblem } from '../policy.ts';
 import { autoJoinAllowedDomains } from '../domainJoin.ts';
 import { retainBeforePurge } from '../retention.ts';
 import { TreeCopier, assertCopyBudget, ownedCollectionsOf } from '../dbcopy.ts';
+import { demoConfig, isDemoAccountEmail } from '../demo.ts';
 
 export interface Ctx {
   userId: string | null;
@@ -211,7 +212,8 @@ export const handlers: Record<string, Handler> = {
     if (!e || e.length > 254) throw new ApiError('Please provide a valid email address.');
     // attempts: 10 per address and 100 per client address per hour (a code also locks after 5 wrong tries)
     const failKey = `login-fail:email:${e}`;
-    if (!hit(failKey, 10, 3600_000) || (!exemptIp(ctx.ip) && !hit(`login-fail:ip:${ctx.ip}`, 100, 3600_000))) {
+    const emailLimited = !isDemoAccountEmail(e);
+    if ((emailLimited && !hit(failKey, 10, 3600_000)) || (!exemptIp(ctx.ip) && !hit(`login-fail:ip:${ctx.ip}`, 100, 3600_000))) {
       throw new RateLimitError('Too many login attempts. Try again later.');
     }
     let userId = findUserIdByEmail(e);
@@ -220,7 +222,7 @@ export const handlers: Record<string, Handler> = {
     } else if (!verifyLoginCode(e, String(code ?? ''))) {
       throw new ApiError('Invalid or expired login code.', 401);
     }
-    reset(failKey);
+    if (emailLimited) reset(failKey);
     let isNewUser = false;
     if (!userId) {
       userId = newId();
@@ -283,7 +285,7 @@ export const handlers: Record<string, Handler> = {
       ];
       addPageTrees(roots, uid, rm);
     }
-    return { recordMap: rm.map, lsn: currentLsn() };
+    return { recordMap: rm.map, lsn: currentLsn(), demoMode: demoConfig() };
   },
   createWorkspace(ctx, { name, icon }) {
     const uid = requireUser(ctx);

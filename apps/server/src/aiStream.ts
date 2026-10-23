@@ -24,11 +24,13 @@ import { executeAgentChat, prepareAgentChat } from './agents/runs.ts';
 import { installAutofillHook } from './ai/autofillAuto.ts';
 import { messageJson } from './api/modules/ai.ts';
 import { AI_RATE_MESSAGE, aiAllowed } from './ratelimit.ts';
+import { DEMO_MESSAGE, isDemoMode } from './demo.ts';
 
 export function registerAiRoutes(app: Hono) {
   installAutofillHook();
 
   app.post('/api/ai/stream', async (c) => {
+    if (isDemoMode()) return c.json({ name: 'PermissionError', message: DEMO_MESSAGE }, 403);
     const userId = userForToken(parseCookies(c.req.header('cookie')).lit_session);
     if (!userId) return c.json({ name: 'UnauthorizedError', message: 'Unauthorized' }, 401);
     if (!/^application\/json\b/i.test(c.req.header('content-type') ?? '')) return c.json({ name: 'ValidationError', message: 'Expected application/json' }, 415);
@@ -114,6 +116,7 @@ export function registerAiRoutes(app: Hono) {
   // MCP server (Streamable HTTP, JSON responses). /mcp is the conventional path; /api/mcp is reachable through
   // the web dev server's /api proxy too.
   const mcp = async (c: any) => {
+    if (isDemoMode()) return c.json({ jsonrpc: '2.0', id: null, error: { code: -32003, message: DEMO_MESSAGE } }, 403);
     if (c.req.method !== 'POST') return c.body(null, 405, { allow: 'POST' });
     if (!/^application\/json\b/i.test(c.req.header('content-type') ?? '')) return c.json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Expected application/json' } }, 415);
     if (Number(c.req.header('content-length') ?? 0) > 1024 * 1024) return c.json({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Request is too large' } }, 413);

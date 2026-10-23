@@ -3869,5 +3869,7 @@
   "lp.templates.work_smarter": "더 스마트하게 공부하기",
   "lp.templates.write_a_review": "리뷰 작성",
   "lp.templates.your_name": "이름",
-  "lp.templates.your_rating": "내 평점"
+  "lp.templates.your_rating": "내 평점",
+  "lp.shell.public_demo_notice": "공개 데모에서는 모두가 이 계정을 함께 사용하며 데이터가 {hours}시간마다 초기화됩니다. 개인정보를 입력하지 마세요.",
+  "lp.shell.public_demo_notice_no_reset": "공개 데모에서는 모두가 이 계정을 함께 사용합니다. 개인정보를 입력하지 마세요."
 }

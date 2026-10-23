@@ -35,6 +35,7 @@ import { COLORS, fromApiRichText, iso } from './richtext.ts';
 import { compileFilter, compileSorts, sortRows } from './query.ts';
 import { pageAsMarkdown, pageUnitsAs } from './markdown.ts';
 import { recordRequest, integrationsInSpace, type Capabilities } from './store.ts';
+import { DEMO_MESSAGE, isDemoMode } from '../demo.ts';
 
 type Json = Record<string, any>;
 
@@ -891,6 +892,10 @@ async function handle(c: Context, h: Handler): Promise<Response> {
 
 export function registerPublicApi(app: Hono) {
   const v1 = new Hono();
+  v1.use('*', async (c, next) => {
+    if (isDemoMode()) return c.json({ object: 'error', status: 403, code: 'forbidden', message: DEMO_MESSAGE }, 403);
+    await next();
+  });
   v1.use('*', bodyLimit({ maxSize: 2 * 1024 * 1024, onError: (c) => c.json({ object: 'error', status: 413, code: 'validation_error', message: 'Invalid request: body is too large.' }, 413) }));
   for (const [method, path, h] of ROUTES) v1.on(method, path, (c) => handle(c, h));
   v1.all('*', (c) => c.json({ object: 'error', status: 400, code: 'invalid_request_url', message: 'Invalid request URL.', request_id: newId() }, 400));

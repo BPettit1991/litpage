@@ -6,7 +6,7 @@ import type {
 import type { RichText } from '@nc/shared/richtext.ts';
 import { getRecord, putRecord, tx } from './db.ts';
 import { indexBlock } from './search.ts';
-import { OpsBuilder } from './content/spec.ts';
+import { dayOffset, OpsBuilder, type Spec } from './content/spec.ts';
 import { TEMPLATES } from './content/catalog.ts';
 
 function save(table: any, rec: any) {
@@ -185,6 +185,34 @@ export function addMember(spaceId: string, userId: string, role: string) {
       }
     }
   });
+}
+
+/** Seed a small, current-looking demo workspace once. */
+export function seedDemoContent(spaceId: string, userId: string) {
+  const space = getRecord<SpaceRecord>('space', spaceId);
+  if (!space || (space.settings as any)?.demo_seed_version) return;
+  tx(() => {
+    const roots: string[] = [];
+    for (const template of TEMPLATES.filter((t) => ['roadmap', 'project-tracker', 'meeting-notes', 'team-wiki'].includes(t.id))) {
+      const builder = new OpsBuilder(spaceId, userId, Date.now());
+      const spec = demoTemplateSpec(template.id, template.build());
+      const root = builder.block(spec, spaceId, 'space', { permissions: [{ type: 'user_permission', role: 'editor', user_id: userId }] });
+      roots.push(root);
+      for (const op of builder.ops) save(op.pointer.table, op.args);
+    }
+    save('space', { ...space, pages: [...(space.pages ?? []), ...roots], settings: { ...(space.settings ?? {}), demo_seed_version: 1 } });
+  });
+}
+
+function demoTemplateSpec(id: string, spec: Spec): Spec {
+  if (id !== 'roadmap' || !spec.db) return spec;
+  const ranges = [[-30, -15], [-10, 10], [15, 45], [50, 75]];
+  spec.db.rows = spec.db.rows.map((row, i) => ({
+    ...row,
+    values: { ...row.values, rmDt: { date: dayOffset(ranges[i % ranges.length][0]), end: dayOffset(ranges[i % ranges.length][1]) } },
+  }));
+  if (!spec.db.views.some((view) => view.type === 'timeline')) spec.db.views = [...spec.db.views, { type: 'timeline', name: 'Timeline' }];
+  return spec;
 }
 
 export { save as saveRecord };

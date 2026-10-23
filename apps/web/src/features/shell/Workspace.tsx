@@ -30,6 +30,7 @@ import { clearAddAccountFlag } from './accounts.tsx';
 import { getUserPrefs, savePrefs } from '../settings/userSettings.ts';
 import { DeveloperBar } from '../settings/DeveloperBar.tsx';
 import { DeveloperTools } from '../developer/DeveloperTools.tsx';
+import { t } from './i18n.ts';
 import './shell.css';
 
 export function Workspace() {
@@ -37,6 +38,7 @@ export function Workspace() {
   const spaceId = useSession((s) => s.spaceId);
   const sidebarOpen = useUI((s) => s.sidebarOpen);
   const sidebarWidth = useUI((s) => s.sidebarWidth);
+  const demo = useSession((s) => s.demoMode);
 
   const pageId = route.name === 'page' ? route.pageId : null;
   const loaded = usePageLoader(pageId);
@@ -125,6 +127,7 @@ export function Workspace() {
 
   return (
     <div className="lit-app-inner" style={{ ['--sidebar-width' as any]: `${sidebarOpen ? sidebarWidth : 0}px` }}>
+      {demo.enabled && <div className="lp-demo-notice">{demo.resetHours ? tDemo(demo.resetHours) : tDemo()}</div>}
       <div className="lit-cursor-listener">
         <Sidebar />
         <main className="lit-frame">
@@ -137,6 +140,12 @@ export function Workspace() {
       <GlobalModals />
     </div>
   );
+}
+
+function tDemo(hours?: number) {
+  return hours
+    ? t('lp.shell.public_demo_notice', `Public demo: everyone shares this account and the data resets every ${hours} hours. Don't enter personal information.`, { hours })
+    : t('lp.shell.public_demo_notice_no_reset', "Public demo: everyone shares this account. Don't enter personal information.");
 }
 
 export type StartPage = 'last_visited' | 'top_page' | 'library' | 'lit_ai';

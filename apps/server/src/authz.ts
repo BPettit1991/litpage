@@ -31,6 +31,7 @@ import {
 } from './policy.ts';
 import { SCHEMA_SIZE_LIMIT, schemaSize } from '@nc/shared/formula/schemaLimit.ts';
 import { stripVerification, verificationEditProblem } from './verificationGuard.ts';
+import { DEMO_DISPLAY_SETTINGS, isDemoMode } from './demo.ts';
 
 const TABLE_SET = new Set<string>(TABLES);
 const COMMANDS = new Set(['set', 'update', 'listAfter', 'listBefore', 'listRemove', 'spliceText']);
@@ -40,6 +41,56 @@ export const SERVER_OWNED = new Set(['version', 'applied_tx_ids']);
 const MAX_ID = 200;
 const MAX_PATH = 16;
 const RICH_TEXT_SPLICE_ROOTS = new Set(['title', 'name', 'description', 'text', 'caption']);
+
+function changedSettingKeys(before: Rec | undefined, after: Rec, op: Operation): Set<string> {
+  const out = new Set<string>();
+  if (op.path[0] === 'settings' && op.path[1]) out.add(op.path[1]);
+  const b = (before?.settings ?? {}) as Rec;
+  const a = (after.settings ?? {}) as Rec;
+  for (const key of new Set([...Object.keys(b), ...Object.keys(a)])) if (!same(b[key], a[key])) out.add(key);
+  return out;
+}
+
+function demoTransactionProblem(op: Operation, before: Rec | undefined, after: Rec, keys: Set<string>, userId: string): string | null {
+  if (!isDemoMode()) return null;
+  const table = op.pointer.table;
+  if (table === 'lit_user') return 'Account identity changes are turned off in the public demo.';
+  if (table === 'user_settings') {
+    const settings = changedSettingKeys(before, after, op);
+    if ([...settings].some((key) => DEMO_DISPLAY_SETTINGS.has(key))) return 'Shared display preferences are kept in this browser in the public demo.';
+  }
+  if (table === 'space' && [...keys].some((key) => key !== 'pages')) return 'Workspace settings are turned off in the public demo.';
+  if (table === 'team' && [...keys].some((key) => key !== 'team_pages')) return 'Workspace team settings are turned off in the public demo.';
+  if (table === 'block' && keys.has('permissions')) {
+    if ((after.permissions ?? []).some((p: any) => p?.type === 'public_permission' && p.role !== 'none')) return 'Sharing and public access are turned off in the public demo.';
+    const beforePermissions = Array.isArray(before?.permissions) ? before.permissions : [];
+    for (const p of (Array.isArray(after.permissions) ? after.permissions : [])) {
+      if (!p || p.role === 'none' || (p.type === 'user_permission' && p.user_id === userId)) continue;
+      const identity = `${p.type}:${p.user_id ?? ''}:${p.group_id ?? ''}:${p.team_id ?? ''}`;
+      const previous = beforePermissions.find((q: any) => `${q?.type}:${q?.user_id ?? ''}:${q?.group_id ?? ''}:${q?.team_id ?? ''}` === identity && q?.role !== 'none');
+      if (!previous || previous.role !== p.role) return 'Sharing and guest invitations are turned off in the public demo.';
+    }
+  }
+  if (table === 'block' && keys.has('permissions_unlinked')) return 'Sharing and public access are turned off in the public demo.';
+  if (table === 'collection_view' && before?.format?.form_config?.permission !== 'public' && after.format?.form_config?.permission === 'public') {
+    return 'Public forms are turned off in the public demo.';
+  }
+  if (hasOutboundAction(after)) return 'Outbound actions are turned off in the public demo.';
+  return null;
+}
+
+function hasOutboundAction(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  if (Array.isArray(value)) return value.some(hasOutboundAction);
+  const rec = value as Record<string, unknown>;
+  if (['webhook', 'mail', 'slack'].includes(String(rec.type ?? '').toLowerCase())) return true;
+  for (const [key, child] of Object.entries(rec)) {
+    const k = key.toLowerCase();
+    if (k.includes('webhook') && child) return true;
+    if (hasOutboundAction(child)) return true;
+  }
+  return false;
+}
 
 type Rec = Record<string, any>;
 type Changed = Map<string, { table: Table; record: BaseRecord; spaceId: string | null }>;
@@ -230,9 +281,16 @@ export class TxGuard {
     const a = after as Rec;
     const uid = this.userId;
     if (a.id !== op.pointer.id) return 'Record id mismatch';
+    const keys = changedKeys(b, a, op);
+    const demoProblem = demoTransactionProblem(op, b, a, keys, uid);
+    if (demoProblem) return demoProblem;
 
     if (!b) {
       // ---------------------------------------------------------------- creation
+      if (isDemoMode() && ['lit_user', 'user_root', 'user_settings'].includes(table)) return 'Account settings cannot be created through the public demo transaction path';
+      if (isDemoMode() && table === 'team') return 'Workspace team settings are turned off in the public demo.';
+      if (isDemoMode() && table === 'block' && (a.permissions_unlinked || (a.permissions ?? []).some((p: any) => p?.type === 'public_permission' && p.role !== 'none'))) return 'Sharing and public access are turned off in the public demo.';
+      if (isDemoMode() && hasOutboundAction(a)) return 'Outbound actions are turned off in the public demo.';
       this.created.add(key);
       this.structural = true;
       if (this.client && ['block', 'collection', 'collection_view', 'discussion', 'comment', 'team'].includes(table)) {
@@ -283,7 +341,6 @@ export class TxGuard {
       this.structural = true;
       return null;
     }
-    const keys = changedKeys(b, a, op);
     if (!keys.size) return null;
     if (keys.has('id')) return 'Record ids cannot change';
     if (['permissions', 'permissions_unlinked', 'parent_id', 'parent_table', 'membership', 'settings', 'space_id', 'alive', 'collection_id'].some((k) => keys.has(k))) this.structural = true;

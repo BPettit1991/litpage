@@ -1,5 +1,6 @@
-.lit-app-inner { height: 100%; width: 100%; position: relative; background: var(--lp-bg-primary); }
-.lit-cursor-listener { height: 100%; width: 100%; display: flex; position: relative; overflow: hidden; }
+.lit-app-inner { height: 100%; width: 100%; position: relative; display: flex; flex-direction: column; background: var(--lp-bg-primary); }
+.lp-demo-notice { flex: 0 0 auto; min-height: 28px; display: flex; align-items: center; justify-content: center; padding: 5px 12px; box-sizing: border-box; background: var(--lp-bg-secondary); color: var(--lp-text-secondary); border-bottom: 1px solid var(--lp-border-secondary); font-size: 12px; line-height: 18px; text-align: center; }
+.lit-cursor-listener { flex: 1 1 auto; min-height: 0; width: 100%; display: flex; position: relative; overflow: hidden; }
 .lit-frame {
   flex: 1 1 0;
   order: 3;

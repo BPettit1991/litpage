@@ -1,12 +1,17 @@
-// Server entry: serves the HTTP app (app.ts) and attaches the WebSocket hub (realtime.ts).
-import { serve } from '@hono/node-server';
-import { userFromRequest } from './auth.ts';
-import { app, originAllowed } from './app.ts';
-import { realtime } from './realtime.ts';
-import { startScheduler } from './scheduler.ts';
-import { bootstrapOwner } from './bootstrap.ts';
+// Server entry. Reset demo data before importing app.ts or db.ts because those modules open SQLite at import time.
+import { demoResetHours, isDemoMode, scheduleDemoExit, wipeDemoDataDir } from './demo.ts';
+
+if (isDemoMode() && demoResetHours()) wipeDemoDataDir();
+
+const { serve } = await import('@hono/node-server');
+const { userFromRequest } = await import('./auth.ts');
+const { app, originAllowed } = await import('./app.ts');
+const { realtime } = await import('./realtime.ts');
+const { startScheduler } = await import('./scheduler.ts');
+const { bootstrapOwner } = await import('./bootstrap.ts');
 
 bootstrapOwner();
+scheduleDemoExit();
 const port = Number(process.env.PORT ?? 3001);
 const server = serve({ fetch: app.fetch, port, hostname: process.env.HOST ?? '127.0.0.1' }, (info) => {
   console.log(`[server] listening on http://${info.address}:${info.port}`);

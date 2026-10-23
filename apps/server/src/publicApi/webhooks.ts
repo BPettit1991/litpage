@@ -20,6 +20,7 @@ import { pageIdOf } from '../search.ts';
 import { connectionRole } from './access.ts';
 import { canManage, getIntegration, IntegrationError, isIntegrationBot, integrationsInSpace, type Integration } from './store.ts';
 import { API_VERSION } from './principal.ts';
+import { isDemoMode } from '../demo.ts';
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS api_webhooks (
@@ -60,7 +61,7 @@ export const COMMENT_EVENTS = ['comment.created', 'comment.updated', 'comment.de
 export const ALL_EVENTS = [...PAGE_EVENTS, ...DATABASE_EVENTS, ...DATA_SOURCE_EVENTS, ...COMMENT_EVENTS];
 
 export function webhooksEnabled(): boolean {
-  return process.env.NC_CONNECTION_WEBHOOKS === '1';
+  return !isDemoMode() && process.env.NC_CONNECTION_WEBHOOKS === '1';
 }
 
 export const WEBHOOKS_OFF = 'Connection webhooks are turned off on this server. Start it with NC_CONNECTION_WEBHOOKS=1 to use them.';

@@ -18,6 +18,7 @@ import type { Hono } from 'hono';
 import { newId } from '@nc/shared/ids.ts';
 import { db } from './db.ts';
 import { devLoginCodesEnabled, parseCookies, userForToken } from './auth.ts';
+import { DEMO_MESSAGE, isDemoMode } from './demo.ts';
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS mail_outbox (
@@ -87,6 +88,8 @@ function cleanup(now: number) {
 
 /** Store (and, with SMTP configured, deliver) one email. Invalid addresses are dropped (returns null). */
 export function sendMail(m: MailContent & { to: string; toUserId?: string | null; kind: string; meta?: Record<string, unknown>; sensitive?: boolean }): string | null {
+  // A public demo has no outbound mail channel, even if an SMTP setting is accidentally present.
+  if (isDemoMode()) return null;
   const to = String(m.to ?? '').trim().toLowerCase();
   if (!EMAIL_RE.test(to) || to.length > 254) return null;
   const now = Date.now();
@@ -457,6 +460,7 @@ function viewerFor(cookie: string | undefined): { all: boolean; email: string | 
 
 export function registerMailRoutes(app: Hono) {
   app.get('/api/dev/mail', (c) => {
+    if (isDemoMode()) return c.text(DEMO_MESSAGE, 403);
     const v = viewerFor(c.req.header('cookie'));
     if (!v) return c.text('Not found', 404);
     const to = c.req.query('to') ?? undefined;
@@ -473,6 +477,7 @@ a{color:#2383e2;text-decoration:none}.kind{background:#f1f1ef;border-radius:4px;
   });
 
   app.get('/api/dev/mail/:id', (c) => {
+    if (isDemoMode()) return c.text(DEMO_MESSAGE, 403);
     const v = viewerFor(c.req.header('cookie'));
     const m = v ? getMail(c.req.param('id')) : null;
     if (!v || !m || (!v.all && m.to !== v.email)) return c.text('Not found', 404);

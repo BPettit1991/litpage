@@ -24,8 +24,16 @@ import { cleanFileName, cleanMime, fileHeaders, fileRow, storeFile } from './con
 import { hit } from './ratelimit.ts';
 import { audit } from './audit.ts';
 import { pageIdOf } from './search.ts';
+import { assertDemoRpc, DEMO_MESSAGE, isDemoMode } from './demo.ts';
 
 Object.assign(handlers, extraHandlers);
+// Keep direct RPC calls and HTTP dispatch on the same demo policy.
+for (const [name, handler] of Object.entries(handlers)) {
+  handlers[name] = (ctx, body) => {
+    assertDemoRpc(name);
+    return handler(ctx, body);
+  };
+}
 realtime.setRoleResolver((table, rec, userId) => recordRole(table, rec, userId));
 realtime.setAccess({
   page: (pageId, userId) => blockRole(pageId, userId) !== 'none',
@@ -35,6 +43,7 @@ realtime.setAccess({
 
 const MAX_JSON_BYTES = 20 * 1024 * 1024;
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+const DEMO_MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 /** Behind a reverse proxy (NC_TRUST_PROXY=1) the client address / scheme come from X-Forwarded-* headers. */
 const TRUST_PROXY = process.env.NC_TRUST_PROXY === '1';
 const EXTRA_ORIGINS = new Set((process.env.NC_ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean));
@@ -144,10 +153,11 @@ registerMailRoutes(app);
 registerPublicApi(app);
 
 // ---------------------------------------------------------------- uploads: raw body; filename/type in query
-app.post('/api/upload', bodyLimit({ maxSize: MAX_UPLOAD_BYTES, onError: (c) => c.json({ message: 'File too large (50MB max)' }, 413) }), async (c) => {
+app.post('/api/upload', bodyLimit({ maxSize: isDemoMode() ? DEMO_MAX_UPLOAD_BYTES : MAX_UPLOAD_BYTES, onError: (c) => c.json({ message: isDemoMode() ? `${DEMO_MESSAGE} Files are limited to 5 MB in the public demo.` : 'File too large (50MB max)' }, 413) }), async (c) => {
   const userId = userForToken(parseCookies(c.req.header('cookie')).lit_session);
   if (!userId) return c.json({ message: 'Unauthorized' }, 401);
-  if (Number(c.req.header('content-length') ?? 0) > MAX_UPLOAD_BYTES) return c.json({ message: 'File too large (50MB max)' }, 413);
+  const maxUpload = isDemoMode() ? DEMO_MAX_UPLOAD_BYTES : MAX_UPLOAD_BYTES;
+  if (Number(c.req.header('content-length') ?? 0) > maxUpload) return c.json({ message: isDemoMode() ? `${DEMO_MESSAGE} Files are limited to 5 MB in the public demo.` : 'File too large (50MB max)' }, 413);
   if (!hit(`upload:user:${userId}`, 300, 10 * 60_000)) return c.json({ message: 'Too many uploads. Try again later.' }, 429);
   const name = cleanFileName(c.req.query('name') ?? 'file');
   const mime = cleanMime(c.req.query('type') ?? c.req.header('content-type'));
@@ -155,7 +165,7 @@ app.post('/api/upload', bodyLimit({ maxSize: MAX_UPLOAD_BYTES, onError: (c) => c
   const sid = c.req.query('spaceId');
   const spaceId = sid && isSpaceMember(getRecord<SpaceRecord>('space', sid), userId) ? sid : null;
   const buf = Buffer.from(await c.req.arrayBuffer());
-  if (buf.length > MAX_UPLOAD_BYTES) return c.json({ message: 'File too large (50MB max)' }, 413);
+  if (buf.length > maxUpload) return c.json({ message: isDemoMode() ? `${DEMO_MESSAGE} Files are limited to 5 MB in the public demo.` : 'File too large (50MB max)' }, 413);
   const f = storeFile(name, buf, userId, spaceId, mime);
   // Settings › Audit log › File uploaded: "Uploaded {fileName} to {pageName}" when the upload names a block the
   // uploader can edit, else "Uploaded a file" in the workspace it is attributed to
@@ -168,6 +178,8 @@ app.post('/api/upload', bodyLimit({ maxSize: MAX_UPLOAD_BYTES, onError: (c) => c
 
 // ---------------------------------------------------------------- downloads
 app.get('/files/:id/:name', (c) => {
+  // Uploaded files remain usable to signed-in demo visitors, but capability URLs must not expose them anonymously.
+  if (isDemoMode() && !userForToken(parseCookies(c.req.header('cookie')).lit_session)) return c.text(DEMO_MESSAGE, 403);
   const row = fileRow(c.req.param('id'));
   if (!row || !existsSync(row.path)) return c.text('Not found', 404);
   if (row.private) {

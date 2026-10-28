@@ -1,7 +1,7 @@
 // Shared helpers for E2E scripts: launch system Chrome headless at a 1384x853 desktop viewport.
 import { chromium } from 'playwright-core';
 export const BASE = process.env.NC_BASE ?? 'http://127.0.0.1:5173';
-export const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+export const CHROME = process.env.NC_CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 export async function launch({ headless = true } = {}) {
   const browser = await chromium.launch({ executablePath: CHROME, headless });
   const context = await browser.newContext({ viewport: { width: 1384, height: 853 }, deviceScaleFactor: 2, locale: 'en-US' });

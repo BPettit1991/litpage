@@ -2,10 +2,17 @@
 import { chromium } from 'playwright-core';
 export const BASE = process.env.NC_BASE ?? 'http://127.0.0.1:5173';
 export const CHROME = process.env.NC_CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+// The scripts are written for macOS, where the app's shortcut modifier is Cmd (Meta). Off macOS the app uses Ctrl
+// (see isMac in apps/web/src/features/editor/textHandlers.ts), so translate Meta to Control for keyboard input there.
+const mapKey = (key) => (process.platform === 'darwin' ? key : key.replace(/\bMeta\b/g, 'Control'));
 export async function launch({ headless = true } = {}) {
   const browser = await chromium.launch({ executablePath: CHROME, headless });
   const context = await browser.newContext({ viewport: { width: 1384, height: 853 }, deviceScaleFactor: 2, locale: 'en-US' });
   const page = await context.newPage();
+  for (const method of ['press', 'down', 'up']) {
+    const original = page.keyboard[method].bind(page.keyboard);
+    page.keyboard[method] = (key, ...rest) => original(mapKey(key), ...rest);
+  }
   page.on('pageerror', (e) => console.log('[pageerror]', e.message));
   page.on('console', (m) => { if (m.type() === 'error') console.log('[console.error]', m.text().slice(0, 300)); });
   return { browser, context, page };

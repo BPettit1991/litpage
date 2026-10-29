@@ -1,11 +1,39 @@
 // Shared helpers for E2E scripts: launch system Chrome headless at a 1384x853 desktop viewport.
 import { chromium } from 'playwright-core';
 export const BASE = process.env.NC_BASE ?? 'http://127.0.0.1:5173';
-export const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+export const CHROME = process.env.NC_CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+// The scripts are written for macOS, where the app's shortcut modifier is Cmd (Meta). Off macOS the app uses Ctrl
+// (see isMac in apps/web/src/features/editor/textHandlers.ts), so translate Meta to Control for keyboard input there.
+const mapKey = (key) => (process.platform === 'darwin' ? key : key.replace(/\bMeta\b/g, 'Control'));
+// Scripts also open extra contexts and pages with browser.newContext() / context.newPage(), so the mapping is applied
+// to every page as it is created.
+const patchedPages = new WeakSet();
+function mapKeyboard(page) {
+  if (patchedPages.has(page)) return;
+  patchedPages.add(page);
+  for (const method of ['press', 'down', 'up']) {
+    const original = page.keyboard[method].bind(page.keyboard);
+    page.keyboard[method] = (key, ...rest) => original(mapKey(key), ...rest);
+  }
+}
+// Every script gets its browser from chromium.launch (directly or through launch() below), so the wrapper is installed
+// once here. Pages made with browser.newContext() / context.newPage() get the mapping as they are created.
+const launchChromium = chromium.launch.bind(chromium);
+chromium.launch = async (options) => {
+  const browser = await launchChromium(options);
+  const newContext = browser.newContext.bind(browser);
+  browser.newContext = async (contextOptions) => {
+    const ctx = await newContext(contextOptions);
+    ctx.on('page', mapKeyboard);
+    return ctx;
+  };
+  return browser;
+};
 export async function launch({ headless = true } = {}) {
   const browser = await chromium.launch({ executablePath: CHROME, headless });
   const context = await browser.newContext({ viewport: { width: 1384, height: 853 }, deviceScaleFactor: 2, locale: 'en-US' });
   const page = await context.newPage();
+  mapKeyboard(page);
   page.on('pageerror', (e) => console.log('[pageerror]', e.message));
   page.on('console', (m) => { if (m.type() === 'error') console.log('[console.error]', m.text().slice(0, 300)); });
   return { browser, context, page };

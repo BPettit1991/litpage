@@ -70,7 +70,7 @@ const spaNav = (path) => page.evaluate((p) => { history.pushState({}, '', p); di
 const rowTitles = () => page.$$eval('.nc-lib-item .nc-lib-title-text', (els) => els.map((e) => e.textContent.trim()));
 
 async function addPrivatePage(title) {
-  await hoverClick(page, '.lit-outliner-private-header', 'Add a page');
+  await hoverClick(page, '.lit-outliner-private-header', 'Create a page');
   await page.waitForSelector('h1[data-content-editable-leaf]');
   await page.keyboard.type(title);
   await page.waitForTimeout(500);
@@ -84,7 +84,7 @@ try {
   // sub-page inside Beta via the sidebar row "+"
   const beta = page.locator('nav [role=treeitem]', { hasText: 'Beta Library Page' }).first();
   await beta.hover();
-  await beta.locator('[aria-label="Add a page inside"]').click();
+  await beta.locator('[aria-label="Create a subpage"]').click();
   await page.waitForSelector('h1[data-content-editable-leaf]');
   await page.keyboard.type('Beta Child');
   await page.waitForTimeout(700);
@@ -102,7 +102,7 @@ try {
   const tabBox = await page.locator('.nc-lib-tab').first().boundingBox();
   ok(tabBox && Math.round(tabBox.x) === 374 && Math.round(tabBox.y) === 105 && Math.round(tabBox.height) === 32, `first tab at 374,105 h32 (got ${tabBox && [Math.round(tabBox.x), Math.round(tabBox.y), Math.round(tabBox.height)]})`);
   const heads = await page.$$eval('.nc-lib-hcell', (els) => els.map((e) => e.textContent.trim()));
-  ok(heads.join('|') === 'Page name|Created by|Source|Last edited time|Last visited time', `recents columns ${heads.join('|')}`);
+  ok(heads.join('|') === 'Page name|Created by|Source|Last edited|Time last visited', `recents columns ${heads.join('|')}`);
   const hdr = await page.locator('.nc-lib-hcell').first().boundingBox();
   ok(hdr && Math.round(hdr.x) === 374 && Math.round(hdr.y) === 141 && Math.round(hdr.width) === 420, `header cell 374,141 w420 (got ${hdr && [Math.round(hdr.x), Math.round(hdr.y), Math.round(hdr.width)]})`);
   const recents = await rowTitles();
@@ -186,7 +186,7 @@ try {
   await page.click('.nc-lib-settings [aria-label="Close"]');
 
   // other tabs
-  for (const [name, file] of [['Teamspaces', '10-teamspaces'], ['Favorites', '11-favorites'], ['Shared', '12-shared'], ['Private', '13-private']]) {
+  for (const [name, file] of [['Teams', '10-teamspaces'], ['Favorites', '11-favorites'], ['Shared', '12-shared'], ['Private', '13-private']]) {
     await selectTab(page, name);
     await page.waitForTimeout(600);
     await shot(file);
@@ -194,7 +194,7 @@ try {
   ok(await page.locator('.nc-lib-tool.active[aria-label="Sort"]').count() === 1, 'Private tab has default Last edited sort');
   const priv = await rowTitles();
   ok(priv.includes('Alpha Library Page'), `private rows → ${priv.join(', ')}`);
-  await selectTab(page, 'Teamspaces');
+  await selectTab(page, 'Teams');
   await page.waitForTimeout(300);
   ok(await page.locator('.nc-lib-ts-row', { hasText: 'General' }).count() >= 1, 'Your teamspaces lists General');
   await page.locator('.nc-lib-ts-row', { hasText: 'General' }).first().locator('.nc-lib-toggle').click();
@@ -202,13 +202,7 @@ try {
   await shot('14-teamspaces-expanded');
 
   // AI Meeting Notes + Skills
-  const more = page.locator('.nc-lib-more');
-  if (await more.count()) {
-    await more.click();
-    await page.click('.nc-overlay [role=option]:has-text("AI Meeting Notes")');
-  } else {
-    await selectTab(page, 'AI Meeting Notes');
-  }
+  await selectTab(page, 'AI meeting notes');
   await page.waitForTimeout(800);
   await shot('15-ai-notes-empty');
   ok(await page.locator('.nc-lib-empty').count() === 1, 'AI notes empty state');

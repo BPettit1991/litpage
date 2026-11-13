@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+    <title>Litpage</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #fbfbfa; --card: #ffffff; --ink: #2c2c2b; --muted: #73726e; --line: #e4e3df; --accent: #2c2c2b;
+        --accent-ink: #ffffff; --danger-bg: #fdecea; --danger-ink: #a12a22; --focus: #4f46e5;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #191919; --card: #222221; --ink: #ecebe8; --muted: #9b9a96; --line: #353533; --accent: #ecebe8;
+          --accent-ink: #191919; --danger-bg: #3a1f1c; --danger-ink: #f3a59e;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 32px 16px;
+        background: var(--bg); color: var(--ink);
+        font: 15px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif;
+      }
+      main { width: 100%; max-width: 520px; }
+      h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; }
+      .lead { color: var(--muted); margin: 0 0 24px; }
+      .error { background: var(--danger-bg); color: var(--danger-ink); border-radius: 8px; padding: 10px 14px; margin: 0 0 16px; white-space: pre-wrap; overflow-wrap: anywhere; }
+      .error:empty { display: none; }
+      label.option {
+        display: block; background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+        padding: 14px 16px; margin-bottom: 12px; cursor: pointer;
+      }
+      label.option:has(input[type="radio"]:checked) { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+      label.option:has(input[type="radio"]:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+      .head { display: flex; gap: 10px; align-items: baseline; }
+      .head input { margin: 0; accent-color: var(--ink); translate: 0 1px; }
+      .title { font-weight: 600; }
+      .desc { color: var(--muted); margin: 2px 0 0 23px; font-size: 14px; }
+      .fields { display: none; margin: 12px 0 2px 23px; gap: 10px; }
+      label.option:has(input[type="radio"]:checked) .fields { display: grid; }
+      .field span { display: block; font-size: 13px; color: var(--muted); margin-bottom: 3px; }
+      .field input {
+        width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px;
+        background: var(--bg); color: var(--ink); font: inherit;
+      }
+      .field input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+      .note { font-size: 13px; color: var(--muted); margin: 0; }
+      button {
+        margin-top: 8px; width: 100%; padding: 10px 16px; border: 0; border-radius: 8px;
+        background: var(--accent); color: var(--accent-ink); font: inherit; font-weight: 600; cursor: pointer;
+      }
+      button:disabled { opacity: 0.6; cursor: default; }
+      button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+      footer { margin-top: 16px; color: var(--muted); font-size: 12px; text-align: center; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Where should Litpage run?</h1>
+      <p class="lead">You can change this later from the File menu.</p>
+      <p class="error" id="error" role="alert"></p>
+      <form id="form">
+        <label class="option">
+          <div class="head"><input type="radio" name="mode" value="local" checked /><span class="title">On this computer</span></div>
+          <p class="desc">Pages, databases and files are stored on this PC. Works offline, and nobody else can open them.</p>
+          <div class="fields" id="local-fields">
+            <label class="field"><span>Your name (optional)</span><input id="name" autocomplete="name" maxlength="100" /></label>
+            <label class="field"><span>Email (optional, shown on your profile)</span><input id="email" type="email" autocomplete="email" placeholder="me@litpage.local" maxlength="254" /></label>
+          </div>
+          <p class="note fields" id="local-existing">Your existing workspace on this computer will be opened.</p>
+        </label>
+        <label class="option">
+          <div class="head"><input type="radio" name="mode" value="remote" /><span class="title">Connect to a Litpage server</span></div>
+          <p class="desc">Use a server you or your team already host. You sign in with your account there.</p>
+          <div class="fields">
+            <label class="field"><span>Server address</span><input id="remoteUrl" type="url" placeholder="https://litpage.example.com" spellcheck="false" /></label>
+          </div>
+        </label>
+        <button id="go" type="submit">Continue</button>
+      </form>
+      <footer id="version"></footer>
+    </main>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const bridge = window.litpageDesktop;
+      const mode = () => new FormData($('form')).get('mode');
+
+      bridge.state().then((s) => {
+        if (!s) return;
+        $('error').textContent = s.error;
+        $('name').value = s.name;
+        $('email').value = s.email;
+        $('remoteUrl').value = s.remoteUrl;
+        $('version').textContent = `Litpage for Windows ${s.version}`;
+        if (s.mode) document.querySelector(`input[name="mode"][value="${s.mode}"]`).checked = true;
+        // the local account is created once; afterwards there is nothing to ask
+        if (s.hasLocalData) $('local-fields').remove();
+        else $('local-existing').remove();
+      });
+
+      $('form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        $('go').disabled = true;
+        $('go').textContent = mode() === 'remote' ? 'Connecting…' : 'Starting…';
+        $('error').textContent = '';
+        const res = await bridge.choose({ mode: mode(), name: $('name')?.value, email: $('email')?.value, remoteUrl: $('remoteUrl').value });
+        if (res?.error) {
+          $('error').textContent = res.error;
+          $('go').disabled = false;
+          $('go').textContent = 'Continue';
+        }
+      });
+    </script>
+  </body>
+</html>

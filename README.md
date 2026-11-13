@@ -160,6 +160,11 @@ For a production build served by the API server on port 3001:
 pnpm build && pnpm start
 ```
 
+### Windows desktop app
+
+`desktop/` builds a Windows installer that bundles the server and the web app, or connects to a server you already
+host. See [desktop/README.md](desktop/README.md).
+
 ## Configuration
 
 Set these as environment variables (in development, `apps/server/.env.local` is read too; it is git-ignored).
@@ -259,6 +264,7 @@ packages/shared   records, operations, rich text, permissions, database query an
 apps/server       Node 26 + Hono + node:sqlite + WebSocket
 apps/web          React 19 + Vite
 e2e               end-to-end scripts (Chrome via playwright-core)
+desktop           Windows desktop app (Electron shell around the server and web app)
 docs              architecture.md, how-it-was-built.md
 ```
 
